@@ -8,7 +8,7 @@ set(CMAKE_BUILD_TYPE Debug)
 add_executable(ray_tracer src/Shader.cpp src/main.cpp)
 
 # Include directories
-target_include_directories(ray_tracer PRIVATE ./include)
+target_include_directories(ray_tracer PRIVATE ./Include)
 
 # Add the glfw subdirectory and link it as a dependency
 target_link_libraries(ray_tracer PRIVATE glfw GL GLEW)

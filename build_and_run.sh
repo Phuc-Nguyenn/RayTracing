@@ -1,7 +1,7 @@
 #!/bin/bash
 vertex_glsl_path="./src/shaders/Vertex.glsl"
 fragment_glsl_path="./src/shaders/Fragment.glsl"
-skybox_directory_path="./textures/BlackStudio"
+skybox_directory_path="./textures/DaylightBox"
 
 BUILD_DIR="build"
 
