@@ -83,7 +83,11 @@ static Scene CreateScene(unsigned int shaderProgramId) {
     return scene;
 }
 
-static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window, const std::string& vertexShaderPath, const std::string& fragmentShaderPath)
+static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window, 
+    const std::string& vertexShaderPath, 
+    const std::string& fragmentShaderPath,
+    const std::string& skyBoxPath
+)
 {
     ShaderProgramSource source = ParseShader(vertexShaderPath, fragmentShaderPath);
     unsigned int shaderProgramId = CreateShaderProgram(source.VertexSource, source.FragmentSource);
@@ -134,7 +138,7 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     int width, height, nrChannels;
     unsigned char *data;
     std::vector<std::string> textures_faces = {
-        "/mnt/c/Users/nlgph/CodeProjects/MiniShader/RayTracer/Textures/DaylightBoxUV",
+        skyBoxPath,
         "right.png",
         "left.png",
         "top.png",
@@ -212,13 +216,14 @@ static void key_callback(GLFWwindow* window, const int key, const int, const int
 }
 
 int main(int argc, char** argv) {
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <vertex_shader_path> <fragment_shader_path>" << std::endl;
+    if (argc != 4) {
+        std::cerr << "Usage: " << argv[0] << " <vertex_shader_path> <fragment_shader_path> <skybox_path>" << std::endl;
         return EXIT_FAILURE;
     }
 
     std::string vertexShaderPath = argv[1];
     std::string fragmentShaderPath = argv[2];
+    std::string skyboxPath = argv[3];
 
     glfwSetErrorCallback(error_callback);
     if (!glfwInit())
@@ -250,7 +255,7 @@ int main(int argc, char** argv) {
 		return EXIT_FAILURE;
     }
 
-    RenderScene(std::move(window), vertexShaderPath, fragmentShaderPath);
+    RenderScene(std::move(window), vertexShaderPath, fragmentShaderPath, skyboxPath);
 
     return 0;
 }

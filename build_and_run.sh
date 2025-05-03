@@ -1,6 +1,8 @@
 #!/bin/bash
+vertex_glsl_path="./src/shaders/Vertex.glsl"
+fragment_glsl_path="./src/shaders/Fragment.glsl"
+skybox_directory_path="./textures/BlackStudio"
 
-# Define variables
 BUILD_DIR="build"
 
 # Create build directory if it doesn't exist
@@ -16,4 +18,5 @@ make -j 16
 # Navigate back to the root directory
 cd ..
 
-./build/ray_tracer ./src/shaders/Vertex.glsl ./src/shaders/Fragment.glsl
+./build/ray_tracer $vertex_glsl_path $fragment_glsl_path $skybox_directory_path
+
