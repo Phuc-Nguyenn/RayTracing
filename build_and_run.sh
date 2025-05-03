@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Define variables
+BUILD_DIR="build"
+
+# Create build directory if it doesn't exist
+mkdir -p $BUILD_DIR
+
+# Navigate to the build directory
+cd $BUILD_DIR
+# Run CMake to configure the project
+cmake ..
+# Build the project
+make -j 16
+
+# Navigate back to the root directory
+cd ..
+
+./build/ray_tracer ./src/shaders/Vertex.glsl ./src/shaders/Fragment.glsl
