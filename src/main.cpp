@@ -6,6 +6,8 @@
 #include <sstream>
 #include <cstdlib>
 #include <memory>
+#include <chrono>
+#include <cstdlib>
 
 #include "Renderer.h"
 #include "VertexBuffer.h"
@@ -16,8 +18,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define SCREEN_WIDTH 1440
-#define SCREEN_HEIGHT 900
+#define SCREEN_WIDTH 1920
+#define SCREEN_HEIGHT 1080
 
 /* keys state array */
 bool keys[1024] = { false };
@@ -28,52 +30,24 @@ static Scene CreateScene(unsigned int shaderProgramId) {
     scene.SetCamera({{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 120.0f});
 
     // Ground plane
-    scene.AddSphere({5, 0.0, -1000.0}, 1000.0, Material::Reflective{{0.9,0.9,0.9}, 0.95, 0.8});
+    scene.AddSphere({5, 0.0, -1000.0}, 1000.0, Material::Reflective{{0.9,0.9,0.9}, 0.0, 1.0});
 
     // Centerpiece transparent sphere
-    scene.AddSphere({10.0, 0.0, 1.5}, 1.5, Material::Transparent{{0.95, 0.95, 1.0}, 1.33});
+    // scene.AddSphere({10.0, 0.0, 1.5}, 1.5, Material::Transparent{{ 1.0,  1.0, 1.0}, 1.33});
 
     // Tomato-colored sphere
-    scene.AddSphere({8.0, 2.0, 1.0}, 1.0, Material::Reflective{{0.8f, 0.2f, 0.2f}, 1.0, 0.7});
 
-    // Randomly scattered spheres with even spread
-    int gridSize = 8;
-    float startX = 5.0f;
-    float startY = -10.0f;
-    float step = 2.5f;
-
-    for (int i = 0; i < gridSize; ++i) {
-        for (int j = 0; j < gridSize; ++j) {
-            float jitterX = static_cast<float>(rand()) / RAND_MAX * 1.0f - 0.5f;
-            float jitterY = static_cast<float>(rand()) / RAND_MAX * 1.0f - 0.5f;
-            float x = startX + i * step + jitterX;
-            float y = startY + j * step + jitterY;
-            float radius = 0.3f + static_cast<float>(rand()) / RAND_MAX * 0.4f;
-            float z = radius;
-
-            int matType = rand() % 3;
-            switch (matType) {
-                case 0:
-                    scene.AddSphere({x, y, z}, radius, Material::Reflective{
-                        {0.3f + 0.7f * (rand() / (float)RAND_MAX),
-                         0.3f + 0.7f * (rand() / (float)RAND_MAX),
-                         0.3f + 0.7f * (rand() / (float)RAND_MAX)}, 0.5, 0.5
-                    });
-                    break;
-                case 1:
-                    scene.AddSphere({x, y, z}, radius, Material::Reflective{
-                        {0.8f, 0.85f, 0.9f}, 0.4f + 0.3f * (rand() / (float)RAND_MAX), 0.0});
-                    break;
-                case 2:
-                    scene.AddSphere({x, y, z}, radius, Material::Transparent{
-                        {1.0f, 1.0f, 1.0f}, 1.33f});
-                    break;
-            }
+    for(int i=0; i<=5; ++i) {
+        for(int j=0; j<=5; ++j) {
+            scene.AddSphere({i*3.0, j*3.0, 1.0}, 1.0, Material::Reflective{{1.0, 0.0f, 0.0}, i*0.2, j*0.1});
         }
     }
 
+    scene.AddSphere({-3.0, -3.0, 1.0}, 1.0, Material::Transparent{{1.0f,1.0f,1.0f}, 1.33});
+
+
     // Bright Lambertian for ambient lighting effect
-    scene.AddSphere({150.0, 100.0, 100.0}, 60, Material::LightSource{{1.0,1.0,1.0}});
+    scene.AddSphere({100.0, 100.0, 120.0}, 40, Material::LightSource{{1.0,1.0,1.0}});
     //scene.AddSphere({-150.0, 100.0, 100.0}, 120, Material::LightSource{{1.0,1.0, 1.2}});
 
 
@@ -171,6 +145,8 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "skybox"), 1)); // tell shader: skybox = texture unit 1
 
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
+    auto timePoint = std::chrono::steady_clock::now();
+    uint32_t secFrameCount = 0;
     while (!glfwWindowShouldClose(window.get()))
 	{
 		glfwPollEvents();
@@ -189,9 +165,20 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
         // Now bind default framebuffer (screen) to display the rendered content
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
         
-		GLCALL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices)/sizeof(Vector2f)));
+        GLCALL(glBlitNamedFramebuffer(fbo, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST));
+        //GLCALL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices)/sizeof(Vector2f)));
 
 		glfwSwapBuffers(window.get());
+
+        secFrameCount++;
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now-timePoint).count() > 1000) {
+            system("clear");
+            timePoint = now;
+            uint32_t fps = secFrameCount;
+            std::cout << "fps: " << fps << std::endl;
+            secFrameCount = 0;
+        }
 	}
     GLCALL(glDeleteProgram(shaderProgramId));
     glDisableVertexAttribArray(0);

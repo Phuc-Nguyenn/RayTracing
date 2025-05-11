@@ -3,7 +3,7 @@
 out vec3 color;
 
 #define INF 1.0/0.0
-#define BOUNCE_LIMIT 11
+#define BOUNCE_LIMIT 32
 #define MAX_OBJ_COUNT 100
 #define MAX_LIGHTS_COUNT 10
 #define BACKGROUND_COLOUR 0,0,0
@@ -67,6 +67,10 @@ uint Hash(uint x) {
     return x;
 }
 
+uint Hashf(float x) {
+    return Hash(floatBitsToUint(x));
+}
+
 // Returns a float in [0.0, 1.0) from a uint
 float Rand(uint m) {
     const uint MantissaMask = 0x007FFFFFu;
@@ -75,6 +79,10 @@ float Rand(uint m) {
     m |= OneFloatBits;                  // Combine with base float (1.0)
     float f = uintBitsToFloat(m);       // Get float in [1.0, 2.0)
     return f - 1.0;                     // Shift to [0.0, 1.0)
+}
+
+float Randf(float m) {
+    return Rand(floatBitsToUint(m));
 }
 
 // Generates a pseudo-random vec3 from a seed vector
@@ -193,16 +201,6 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     return hitAnything;
 };
 
-vec3 Reflect(inout vec3 v, inout vec3 n) {
-    return v - 2*dot(v,n)*n;
-};
-
-vec3 Refract(inout vec3 uv, inout vec3 n, float etai_over_etat) {
-    float cos_theta = min(dot(-uv, n), 1.0);
-    vec3 r_out_perp =  etai_over_etat * (uv + cos_theta*n);
-    vec3 r_out_parallel = -sqrt(abs(1.0 - length(r_out_perp)*length(r_out_perp))) * n;
-    return r_out_perp + r_out_parallel;
-};
 
 #define AIR_REFRACT 1.0003
 
@@ -212,35 +210,45 @@ vec3 TransparentScatter(inout HitRecord hitRecord, inout Hittable object, inout 
     float sin_theta = sqrt(1.0 - cos_theta*cos_theta);
     bool canRefract = ri * sin_theta <= 1.0;
     if (canRefract)
-        return Refract(ray.direction, hitRecord.normal, ri);
-    return Reflect(ray.direction, hitRecord.normal);
+        return refract(ray.direction, hitRecord.normal, ri);
+    return reflect(ray.direction, hitRecord.normal);
 
 }
 
 vec3 RayColour(Ray ray) {
     HitRecord hitRecord;
     vec3 colour = vec3(1.0);
+    bool currRayIsSpec = false;
     for(int i=0; i<BOUNCE_LIMIT; ++i) {
         bool hitAnything = HitHittableList(ray, hitRecord);
-        if(!hitAnything)
-            return colour *= texture(skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
-
+        if(!hitAnything) {
+            vec3 skybox_texture = texture(skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
+            return mix(colour*skybox_texture, skybox_texture, float(currRayIsSpec) * max(skybox_texture.x, max(skybox_texture.y, skybox_texture.z)));
+        }
         Hittable object = u_Hittable[hitRecord.HittableIndex];
-        
-        if (object.material.isLightSource) {
-            colour *= object.material.colour;
+        Material material = object.material;
+        if (material.isLightSource) {
+            colour = mix(colour*material.colour, material.colour, float(currRayIsSpec) * max(material.colour.x, max(material.colour.y, material.colour.z)));
             break;
         }
         vec3 nextDirection;
-        if(object.material.transparent) {
-            colour *= object.material.colour;
+        if(material.transparent) {
             nextDirection = TransparentScatter(hitRecord, object, ray);
         } else {
-            colour *= object.material.colour;
+            colour = mix(colour*material.colour, material.colour, float(currRayIsSpec) * max(material.colour.x, max(material.colour.y, material.colour.z)));
+
             vec3 scatterDirection = hitRecord.normal + MakeRandUnitVec(hitRecord.hitPoint);
-            if(length(scatterDirection) < 1e-7) scatterDirection = hitRecord.normal;
-            vec3 reflectDirection = Reflect(ray.direction, hitRecord.normal);
-            nextDirection = mix(scatterDirection, reflectDirection, object.material.reflectivity);
+            vec3 reflectDirection = reflect(ray.direction, hitRecord.normal) + MakeRandUnitVec(hitRecord.hitPoint)*material.roughness;
+
+            float specularSeed = u_RandSeed.x + Hash(i) + Hashf(hitRecord.hitPoint.x*hitRecord.hitPoint.y*hitRecord.hitPoint.z) + Hashf(gl_FragCoord.x) + Hashf(gl_FragCoord.y);
+            bool isSpecular = Randf(specularSeed) < pow(object.material.reflectivity,2);
+            if(isSpecular) {
+                nextDirection = reflectDirection;
+                currRayIsSpec =  true;
+            } else {
+                nextDirection = scatterDirection;
+                currRayIsSpec = false;
+            }  
         }
         vec3 offset = 1e-3 * nextDirection;
         ray = Ray(hitRecord.hitPoint + offset, nextDirection, 1);
