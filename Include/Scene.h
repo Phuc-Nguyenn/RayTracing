@@ -6,13 +6,9 @@
 #include <string>
 #include <cmath>
 #include "Materials.h"
-
-#define SPHERE 0
-#define PLANE 1
+#include "Object.h" 
 
 #define VIEWPORT_DISTANCE 1.0
-
-using namespace Material;
 
 double degreesToRadians(double degrees) {
     return degrees * M_PI / 180.0;
@@ -24,7 +20,6 @@ struct Camera {
     float fov;
     float viewportWidth;
     float viewportDistance;
-
 
     Camera(Vector3f pos, Vector3f facing, float fov) : position(pos), facing(facing), fov(degreesToRadians(fov)), viewportDistance(VIEWPORT_DISTANCE){
         viewportWidth = 2.0 * viewportDistance * tan(this->fov / 2.0);
@@ -44,27 +39,18 @@ Vector3f RotateAroundAxis(const Vector3f& v, const Vector3f& k, float a) {
 }
 
 #include <iostream>
+#include <memory>
 
 class Scene {
     private:
-        
         unsigned int objectsIndex;
         unsigned int shaderProgramId;
-        unsigned int lightsIndex;
         unsigned int frameIndex;
         Camera camera;
         
     public:
         
-        Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), objectsIndex(0), lightsIndex(0), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0) {
-        }
-
-        void AddSphere(Vector3f position, float radius, const Material::Material& material) {
-            SetNextObject(SPHERE, position, {0.0, 0.0, 0.0}, radius, std::move(material));
-        }
-
-        void AddPlane(Vector3f position, Vector3f normal, const Material::Material& material) {
-            SetNextObject(PLANE, position, normal, 0.0, std::move(material));
+        Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), objectsIndex(0), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0) {
         }
 
         void Finalise() {
@@ -77,9 +63,6 @@ class Scene {
             auto objectCountLoc = GetUniformLocation("u_HittablesCount");
             glUniform1ui(objectCountLoc, objectsIndex);
 
-            auto lightCountLoc = GetUniformLocation("u_LightsCount");
-            glUniform1ui(lightCountLoc, lightsIndex);
-
             glUniform1ui(glGetUniformLocation(shaderProgramId, "u_FrameIndex"), frameIndex++);
             glUniform3f(glGetUniformLocation(shaderProgramId, "u_RandSeed"), std::rand(), std::rand(), std::rand());
         }
@@ -88,29 +71,32 @@ class Scene {
             frameIndex = 0;
         }
 
-        void SetNextObject(unsigned int type, const Vector3f& position, const Vector3f& dir, float scale, const Material::Material& material) {
+        void AddObject(const std::unique_ptr<Object> object) {
+
             auto typeLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"type"}});
             auto positionLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"position"}});
             auto directionLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"direction"}});
             auto scaleLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"scale"}});
             auto colourLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"colour"}});
-            auto reflectivityLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"reflectivity"}});
+            auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"specularColour"}});
             auto roughnessLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"roughness"}});
-            auto transparentLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"transparent"}});
+            auto transparencyLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"transparency"}});
             auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"refractionIndex"}});
-            auto isLightSourceLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"isLightSource"}});
+            auto isLightLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"isLight"}});
            
-            glUniform1ui(typeLoc, type);
-            glUniform3f(positionLoc, position.x, position.y, position.z);
-            glUniform3f(directionLoc, dir.x, dir.y, dir.z);
-            glUniform1f(scaleLoc, scale);
+            glUniform1ui(typeLoc, object->getType());
+            glUniform3f(positionLoc, object->getPosition().x, object->getPosition().y, object->getPosition().z);
+            glUniform3f(directionLoc, object->getDir().x, object->getDir().x, object->getDir().x);
+            glUniform1f(scaleLoc, object->getScale());
             
+            const Material::Material material = object->getMaterial();
             glUniform3f(colourLoc, material.colour.x, material.colour.y, material.colour.z);
-            glUniform1f(reflectivityLoc, sqrt(material.reflectivity));
+            glUniform3f(specularcolourLoc, material.specularColour.x, material.specularColour.y, material.specularColour.z);
             glUniform1f(roughnessLoc, material.roughness);
-            glUniform1i(transparentLoc, material.transparent);
+            glUniform1i(transparencyLoc, material.transparency);
             glUniform1f(refractionIdxLoc, material.refractionIndex);
-            glUniform1i(isLightSourceLoc, material.isLightSource);
+            glUniform1i(isLightLoc, material.isLight ? 1 : 0);
+
             objectsIndex++;
         }
 

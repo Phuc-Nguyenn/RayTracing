@@ -18,7 +18,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define SCREEN_WIDTH 1920
+#define SCREEN_WIDTH 1920   
 #define SCREEN_HEIGHT 1080
 
 /* keys state array */
@@ -30,26 +30,19 @@ static Scene CreateScene(unsigned int shaderProgramId) {
     scene.SetCamera({{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 120.0f});
 
     // Ground plane
-    scene.AddSphere({5, 0.0, -1000.0}, 1000.0, Material::Reflective{{0.9,0.9,0.9}, 0.0, 1.0});
-
-    // Centerpiece transparent sphere
-    // scene.AddSphere({10.0, 0.0, 1.5}, 1.5, Material::Transparent{{ 1.0,  1.0, 1.0}, 1.33});
-
-    // Tomato-colored sphere
+    scene.AddObject(std::make_unique<Sphere>(Vector3f{0.0, 0.0, -1000.0}, 1000.0, Material::Lambertian{{0.5, 0.5, 0.5}}));
 
     for(int i=0; i<=5; ++i) {
         for(int j=0; j<=5; ++j) {
-            scene.AddSphere({i*3.0, j*3.0, 1.0}, 1.0, Material::Reflective{{1.0, 0.0f, 0.0}, i*0.2, j*0.1});
+            scene.AddObject(std::make_unique<Sphere>(Vector3f{i*3.0, j*3.0, 1.0}, 1.0, Material::Reflective({1.0, 0.0f, 0.0}, i*0.2, j*0.2)));
         }
     }
 
-    scene.AddSphere({-3.0, -3.0, 1.0}, 1.0, Material::Transparent{{1.0f,1.0f,1.0f}, 1.33});
-
+    scene.AddObject(std::make_unique<Sphere>(Vector3f{-3.0, -3.0, 1.0}, 1.0, Material::Transparent{{1.0f, 1.0f, 1.0f}, 1.0, 1.33}));
 
     // Bright Lambertian for ambient lighting effect
-    scene.AddSphere({100.0, 100.0, 120.0}, 40, Material::LightSource{{1.0,1.0,1.0}});
-    //scene.AddSphere({-150.0, 100.0, 100.0}, 120, Material::LightSource{{1.0,1.0, 1.2}});
-
+    scene.AddObject(std::make_unique<Sphere>(Vector3f{100.0, 100.0, 120.0}, 75, Material::LightSource{{1.0, 1.0, 1.0}}));
+    scene.AddObject(std::make_unique<Sphere>(Vector3f{-150.0, 100.0, 100.0}, 80, Material::LightSource{{1.0, 1.0, 1.0}}));
 
     auto screenResolutionUniformLocation = glGetUniformLocation(shaderProgramId, "screenResolution");
     glUniform2f(screenResolutionUniformLocation, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -162,18 +155,14 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
         GLCALL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices)/sizeof(Vector2f)));
 
-        // Now bind default framebuffer (screen) to display the rendered content
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
         
         GLCALL(glBlitNamedFramebuffer(fbo, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST));
-        //GLCALL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices)/sizeof(Vector2f)));
 
 		glfwSwapBuffers(window.get());
-
         secFrameCount++;
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now-timePoint).count() > 1000) {
-            system("clear");
             timePoint = now;
             uint32_t fps = secFrameCount;
             std::cout << "fps: " << fps << std::endl;

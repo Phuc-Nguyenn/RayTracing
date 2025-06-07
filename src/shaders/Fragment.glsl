@@ -3,20 +3,18 @@
 out vec3 color;
 
 #define INF 1.0/0.0
-#define BOUNCE_LIMIT 32
+#define BOUNCE_LIMIT 16
 #define MAX_OBJ_COUNT 100
-#define MAX_LIGHTS_COUNT 10
-#define BACKGROUND_COLOUR 0,0,0
 #define SPHERE 0
 #define PLANE 1
 
 struct Material {
     vec3 colour;
-    float reflectivity;
+    vec3 specularColour;
     float roughness;
-    bool transparent;
-    bool isLightSource;
+    float transparency;
     float refractionIndex;
+    bool isLight;
 };
 
 struct Hittable {
@@ -45,8 +43,6 @@ uniform vec2 screenResolution;
 uniform Camera u_Camera;
 uniform Hittable u_Hittable[MAX_OBJ_COUNT];
 uniform uint u_HittablesCount;
-uniform Hittable u_Lights[MAX_LIGHTS_COUNT];
-uniform uint u_LightsCount;
 
 // for progressive rendering
 uniform uint u_FrameIndex;
@@ -98,7 +94,7 @@ vec3 MakeRandUnitVec(vec3 seed) {
     vec3 try;
     for(uint i=0; i<4; ++i) {
         float tryLen = length(try);
-        if(1e-8 < tryLen && tryLen <= 1)
+        if(1e-5 < tryLen && tryLen <= 1)
             return try/sqrt(tryLen);
         seed += seed;
         try = MakeRandVec(seed);
@@ -217,44 +213,49 @@ vec3 TransparentScatter(inout HitRecord hitRecord, inout Hittable object, inout 
 
 vec3 RayColour(Ray ray) {
     HitRecord hitRecord;
-    vec3 colour = vec3(1.0);
-    bool currRayIsSpec = false;
+    vec3 rayColour = vec3(1.0);
     for(int i=0; i<BOUNCE_LIMIT; ++i) {
         bool hitAnything = HitHittableList(ray, hitRecord);
+        
         if(!hitAnything) {
             vec3 skybox_texture = texture(skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
-            return mix(colour*skybox_texture, skybox_texture, float(currRayIsSpec) * max(skybox_texture.x, max(skybox_texture.y, skybox_texture.z)));
+            return rayColour*skybox_texture;
         }
         Hittable object = u_Hittable[hitRecord.HittableIndex];
+        
         Material material = object.material;
-        if (material.isLightSource) {
-            colour = mix(colour*material.colour, material.colour, float(currRayIsSpec) * max(material.colour.x, max(material.colour.y, material.colour.z)));
-            break;
+        if (material.isLight) {
+            return rayColour*material.colour;
         }
+
         vec3 nextDirection;
-        if(material.transparent) {
+        if(material.transparency > 0.0) {
             nextDirection = TransparentScatter(hitRecord, object, ray);
         } else {
-            colour = mix(colour*material.colour, material.colour, float(currRayIsSpec) * max(material.colour.x, max(material.colour.y, material.colour.z)));
+            // Use big prime numbers to decorrelate the random seed for each bounce
+            float specularSeed = 
+                Hashf(dot(hitRecord.hitPoint, vec3(12.9898, 78.233, 37.719))) +
+                Hashf(dot(hitRecord.normal, vec3(39.3468, 11.135, 83.155))) +
+                Hash(u_FrameIndex) +
+                Hash(i) +
+                Hashf(dot(u_RandSeed, vec3(53.123, 41.456, 19.789)));
+            
+            vec3 diffuseDir = normalize(hitRecord.normal + MakeRandUnitVec(hitRecord.hitPoint)*material.roughness);
+            vec3 specularDir = reflect(ray.direction, hitRecord.normal);
 
-            vec3 scatterDirection = hitRecord.normal + MakeRandUnitVec(hitRecord.hitPoint);
-            vec3 reflectDirection = reflect(ray.direction, hitRecord.normal) + MakeRandUnitVec(hitRecord.hitPoint)*material.roughness;
+            bool isSpecular = Randf(specularSeed) < (1-material.roughness);
 
-            float specularSeed = u_RandSeed.x + Hash(i) + Hashf(hitRecord.hitPoint.x*hitRecord.hitPoint.y*hitRecord.hitPoint.z) + Hashf(gl_FragCoord.x) + Hashf(gl_FragCoord.y);
-            bool isSpecular = Randf(specularSeed) < pow(object.material.reflectivity,2);
-            if(isSpecular) {
-                nextDirection = reflectDirection;
-                currRayIsSpec =  true;
-            } else {
-                nextDirection = scatterDirection;
-                currRayIsSpec = false;
-            }  
+            specularDir = mix(specularDir, diffuseDir, material.roughness);
+
+            nextDirection = isSpecular ? specularDir : diffuseDir;
+            rayColour *= isSpecular ? material.specularColour : material.colour;
         }
         vec3 offset = 1e-3 * nextDirection;
-        ray = Ray(hitRecord.hitPoint + offset, nextDirection, 1);
+        ray = Ray(hitRecord.hitPoint + offset, normalize(nextDirection), 1);
     }
-    return colour;
+    return rayColour;
 }
+
 
 void main()
 {

@@ -1,23 +1,24 @@
+
+#pragma once
 #include "Math3D.h"
 
 namespace Material
 {
-struct Material {
+struct Material {  
     Vector3f colour;
-    float reflectivity;
+    Vector3f specularColour;
     float roughness;
-    bool transparent;
+    float transparency;
     float refractionIndex;
-    bool isLightSource;
+    bool isLight;
 
-    Material(Vector3f&& colour, bool isLightSource = false, float reflectivity = 0.0, float roughness = 0.0, bool transparent = false, float refractionIndex = 0.0) :
+    Material(Vector3f&& colour, Vector3f specularColour = Vector3f(1.0, 1.0, 1.0), float roughness = 1.0, float transparency = 0.0, float refractionIndex = 0.0, bool isLight = false) :
         colour(colour),
-        reflectivity(reflectivity),
+        specularColour(specularColour),
         roughness(roughness),
-        transparent(transparent),
+        transparency(transparency),
         refractionIndex(refractionIndex),
-        isLightSource(isLightSource)
-    {};
+        isLight(isLight) {};
 };
 
 struct Lambertian : Material {
@@ -26,21 +27,17 @@ struct Lambertian : Material {
 };
 
 struct Reflective : Material {
-    Reflective(Vector3f colour, float reflectivity, float roughness) : Material(std::move(colour), false, reflectivity, roughness)  {
+    Reflective(Vector3f colour, float reflectivity, float roughness) : Material(std::move(colour), Vector3f(1.0, 1.0, 1.0), reflectivity, roughness)  {
     };
 };
 
 struct Transparent : Material {
-    Transparent(Vector3f colour, float refractionIndex) : Material(std::move(colour), false, 0.0, 0.0, true, refractionIndex) {
-    };
-};
-
-struct Metal : Material {
-    Metal(Vector3f colour, float roughness) : Material(std::move(colour), false, 0.333, roughness) {
+    Transparent(Vector3f colour, float transparency, float refractionIndex) : Material(std::move(colour), Vector3f(1.0,1.0,1.0), 0.0, transparency,  refractionIndex) {
     };
 };
 
 struct LightSource : Material {
-    LightSource(Vector3f colour) : Material(std::move(colour), true) {};
+    LightSource(Vector3f colour) : Material(std::move(colour), Vector3f(1.0, 1.0, 1.0), 0.0, 0.0, 0.0, true) {
+    }
 };
-};
+}; // namespace Material
