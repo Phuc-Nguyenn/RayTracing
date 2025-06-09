@@ -64,7 +64,7 @@ class Scene {
             glUniform1ui(objectCountLoc, objectsIndex);
 
             glUniform1ui(glGetUniformLocation(shaderProgramId, "u_FrameIndex"), frameIndex++);
-            glUniform3f(glGetUniformLocation(shaderProgramId, "u_RandSeed"), std::rand(), std::rand(), std::rand());
+            glUniform3f(glGetUniformLocation(shaderProgramId, "u_RandSeed"), float(std::rand() % 32767) / 32767, float(std::rand() % 32767) / 32767, float(std::rand() % 32767) / 32767);
         }
 
         void ResetFrameIndex() {
@@ -80,6 +80,7 @@ class Scene {
             auto colourLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"colour"}});
             auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"specularColour"}});
             auto roughnessLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"roughness"}});
+            auto metallicLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"metallic"}});
             auto transparencyLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"transparency"}});
             auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"refractionIndex"}});
             auto isLightLoc = GetUniformLocationIdx("u_Hittable", objectsIndex, {{"material"}, {"isLight"}});
@@ -93,7 +94,8 @@ class Scene {
             glUniform3f(colourLoc, material.colour.x, material.colour.y, material.colour.z);
             glUniform3f(specularcolourLoc, material.specularColour.x, material.specularColour.y, material.specularColour.z);
             glUniform1f(roughnessLoc, material.roughness);
-            glUniform1i(transparencyLoc, material.transparency);
+            glUniform1f(metallicLoc, material.metallic);
+            glUniform1f(transparencyLoc, material.transparency);
             glUniform1f(refractionIdxLoc, material.refractionIndex);
             glUniform1i(isLightLoc, material.isLight ? 1 : 0);
 
@@ -191,5 +193,7 @@ class Scene {
             return !(cameraInitialFacing == camera.facing) || !(cameraInitialPosition == camera.position) || !(cameraInitialFOV == camera.fov);
         }
 
-
+        unsigned int GetFrameIndex() {
+            return frameIndex;
+        }
 };
