@@ -47,15 +47,14 @@ struct Vector3f {
         z = _z;
     };
 
-    Vector3f& Normalize() {
+    Vector3f Normalize() {
         float mag = sqrt(x * x + y * y + z * z);
-        if (mag > 0.0f) {
-            x /= mag;
-            y /= mag;
-            z /= mag;
-        }
-        return *this;
-    }
+        return Vector3f{
+            x / mag,
+            y / mag,
+            z / mag
+        };
+    };
 
     Vector3f Cross(const Vector3f& v) const {
         return Vector3f(
@@ -88,6 +87,10 @@ struct Vector3f {
             z - v.z
         );
     };
+
+    float len() const {
+        return sqrt(x*x + y*y + z*z);
+    }
 
     float Dot(const Vector3f& v) const {
         return x*v.x + y*v.y + z*v.z;

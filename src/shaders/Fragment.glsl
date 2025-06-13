@@ -3,10 +3,9 @@
 out vec3 color;
 
 #define INF 1.0/0.0
-#define BOUNCE_LIMIT 4
-#define MAX_OBJ_COUNT 100
+#define MAX_HITTABLE_COUNT 8
+#define MAX_OBJ_COUNT 16
 #define SPHERE 0
-#define PLANE 1
 
 struct Material {
     vec3 colour;
@@ -18,12 +17,23 @@ struct Material {
     bool isLight;
 };
 
-struct Hittable {
+struct Hittable { // are things like spheres and triangles
     uint type;
     vec3 position;
     vec3 direction;
     float scale;   
     Material material;
+};
+
+struct Sphere {
+    vec3 position;
+    float scale;
+};
+
+struct Triangle {
+    vec3 position;
+    vec3 position2;
+    vec3 position3;
 };
 
 struct Camera {
@@ -41,17 +51,30 @@ struct Ray {
 };
 
 uniform vec2 screenResolution;
+uniform uint u_BounceLimit;
 uniform Camera u_Camera;
-uniform Hittable u_Hittable[MAX_OBJ_COUNT];
+uniform Hittable u_Hittable[MAX_HITTABLE_COUNT];
 uniform uint u_HittablesCount;
 
 // for progressive rendering
 uniform uint u_FrameIndex;
 uniform vec3 u_RandSeed;
 uniform sampler2D u_Accumulation;
-uniform sampler2D u_GrayNoise;
+//uniform sampler2D u_GrayNoise;
 uniform sampler2D u_RgbNoise;
+uniform sampler1D u_Triangles;
+uniform uint u_TrianglesCount;
 
+struct Object { // represents a grouping of triangles
+    vec3 position;
+    float scale;
+    int trianglesStartIndex;
+    int trianglesCount;
+    Material material;
+};
+
+uniform int u_ObjectsCount;
+uniform Object u_Objects[MAX_OBJ_COUNT];
 // skybox
 uniform samplerCube skybox;
 
@@ -75,7 +98,8 @@ struct HitRecord {
     vec3 normal;
     float t;
     bool frontFace;
-    uint HittableIndex;
+    bool hitAnything;
+    Material material;
 };
 
 void SetFaceNormal(inout HitRecord rec, Ray r, vec3 outwardNormal) {
@@ -121,7 +145,7 @@ vec3 RotateAroundAxis(vec3 v, vec3 k, float a) {
     return result;
 }
 
-bool hitSphere(Hittable sphere, Ray r, inout HitRecord hitRecord) {
+bool hitSphere(Sphere sphere, Ray r, inout HitRecord hitRecord) {
     vec3 center = sphere.position;
     float radius = sphere.scale;
     vec3 oc = center - r.origin;
@@ -146,31 +170,97 @@ bool hitSphere(Hittable sphere, Ray r, inout HitRecord hitRecord) {
     return true;
 };
 
+Triangle getTriangle(int index) {
+    Triangle triangle;
+    int bufferIndex = index*3;
+    triangle.position = texelFetch(u_Triangles, bufferIndex, 0).xyz;
+    triangle.position2 = texelFetch(u_Triangles, bufferIndex + 1, 0).xyz;
+    triangle.position3 = texelFetch(u_Triangles, bufferIndex + 2, 0).xyz;
+    return triangle;
+}
+
+bool hitTriangle(inout Triangle triangle, Ray r, inout HitRecord hitrecord) {
+    vec3 v0 = triangle.position;
+    vec3 v1 = triangle.position2;
+    vec3 v2 = triangle.position3;
+
+    vec3 e1 = v1 - v0;
+    vec3 e2 = v2 - v0;
+    vec3 h = cross(r.direction, e2);
+    float det = dot(e1, h);
+
+    if (abs(det) < 1e-8)
+        return false; // Ray is parallel to triangle
+
+    float invDet = 1.0 / det;
+    vec3 s = r.origin - v0;
+    float u = invDet * dot(s, h);
+    if (u < 0.0 || u > 1.0)
+        return false;
+
+    vec3 q = cross(s, e1);
+    float v = invDet * dot(r.direction, q);
+    if (v < 0.0 || u + v > 1.0)
+        return false;
+
+    float t = invDet * dot(e2, q);
+    if (t < 0.0001)
+        return false;
+
+    hitrecord.t = t;
+    hitrecord.hitPoint = RayAt(r, t);
+    vec3 normal = normalize(cross(e1, e2));
+    SetFaceNormal(hitrecord, r, normal);
+    return true;
+}
 
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
-    bool hitAnything = false;
     hitRecord.t = INF;
+    hitRecord.hitAnything = false;
 
     for(uint i = 0; i < u_HittablesCount; ++i) {
-        Hittable obj = u_Hittable[i];
+        Hittable hittable = u_Hittable[i];
         HitRecord hitRecordTmp;
-        if(obj.type == SPHERE && hitSphere(obj, ray, hitRecordTmp)) {
+        if(hittable.type == SPHERE && hitSphere(Sphere(hittable.position, hittable.scale), ray, hitRecordTmp)) {
             if(hitRecord.t > hitRecordTmp.t) {
                 hitRecord = hitRecordTmp;
-                hitRecord.HittableIndex = i;
-                hitAnything = true;
+                hitRecord.material = hittable.material;
+                hitRecord.hitAnything = true;
             }
         }
-        
     }
-    return hitAnything;
+
+    HitRecord hitRecordDiscard;
+    for(int j = 0; j < u_ObjectsCount; j++) {
+        if(!hitSphere(Sphere(u_Objects[j].position, u_Objects[j].scale), ray, hitRecordDiscard))
+            continue;
+        
+        Material material = u_Objects[j].material;
+    
+        int trianglesIndexStart = u_Objects[j].trianglesStartIndex;
+        int trianglesIndexEnd = trianglesIndexStart + u_Objects[j].trianglesCount;
+
+        for(int i = trianglesIndexStart; i < trianglesIndexEnd; ++i) {
+            Triangle triangle = getTriangle(i);
+            HitRecord hitRecordTmp;
+            if(hitTriangle(triangle, ray, hitRecordTmp)) {
+                if(hitRecord.t > hitRecordTmp.t) {
+                    hitRecord = hitRecordTmp;
+                    hitRecord.material = material;
+                    hitRecord.hitAnything = true;
+                }
+            }
+        }
+    }
+
+    return hitRecord.hitAnything;
 };
 
 
 #define AIR_REFRACT 1.0003
 
-vec3 TransparentScatter(inout HitRecord hitRecord, inout Hittable object, inout Ray ray) {
-    float ri = hitRecord.frontFace ? AIR_REFRACT/object.material.refractionIndex : object.material.refractionIndex/AIR_REFRACT;
+vec3 TransparentScatter(inout HitRecord hitRecord, inout Material material, inout Ray ray) {
+    float ri = hitRecord.frontFace ? AIR_REFRACT/material.refractionIndex : material.refractionIndex/AIR_REFRACT;
     float cos_theta = min(dot(-ray.direction, hitRecord.normal), 1.0);
     float sin_theta = sqrt(1.0 - cos_theta*cos_theta);
     bool canRefract = ri * sin_theta <= 1.0;
@@ -178,10 +268,9 @@ vec3 TransparentScatter(inout HitRecord hitRecord, inout Hittable object, inout 
         return refract(ray.direction, hitRecord.normal, ri);
     return reflect(ray.direction, hitRecord.normal);
 }
-
-#define FOG_DENSITY 0.025
-#define FOG_HEIGHT 128.0
-
+#define FOG_DENSITY 0.00
+#define FOG_HEIGHT 32.0
+ 
 bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colour, vec2 seed, const float maxFogTravel) {
     // find out if ray will across the fod boundary
     float scatterProbability = 0.0;
@@ -197,17 +286,25 @@ bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colo
         fogScope.origin = ray.origin + ray.direction * distanceToFog;
     } else if (ray.direction.z <= 0.0 && ray.origin.z <= FOG_HEIGHT) { // ray is inside the fog
         fogScope.magnitude = hitRecord.t;
-    }
+    } 
+
+    bool hitsLight = false;
+    if(hitRecord.hitAnything && hitRecord.material.isLight) 
+        hitsLight = true;
 
     fogScope.magnitude = min(fogScope.magnitude, maxFogTravel);
     if (fogScope.magnitude > 0.0 && fogScope.magnitude <= hitRecord.t) {
         // probability of scattering is proportional to the distance traveled in fog
         scatterProbability = FOG_DENSITY * fogScope.magnitude;
-        scattered = texture(u_GrayNoise, seed).x < scatterProbability;
+        scattered = texture(u_RgbNoise, seed+vec2(0.012)).x < scatterProbability;
         if(scattered) {
-            vec3 newDirection = normalize(texture(u_RgbNoise, seed).rgb * 2 - 1);
-            ray = MakeRay(fogScope.origin + ray.direction * fogScope.magnitude * texture(u_GrayNoise, seed+vec2(0.01)).x, newDirection, 1);
-            colour *= (1 - FOG_DENSITY/4);
+            vec3 newDirection;
+            if(hitsLight) 
+                newDirection = normalize(ray.direction + texture(u_RgbNoise, seed+vec2(-0.01, 0.034)).rgb * 2 - 1);
+            else
+                newDirection = normalize(texture(u_RgbNoise, seed-vec2(0.054)).rgb * 2 - 1);
+            ray = MakeRay(fogScope.origin + ray.direction * fogScope.magnitude * texture(u_RgbNoise, seed-vec2(0.01, 0.05)).x, newDirection, 1);
+            colour *= (1 - FOG_DENSITY);
         }
     }
     return scattered;
@@ -218,21 +315,20 @@ vec3 RayColour(Ray ray) {
     vec3 rayColour = vec3(1.0);
     const float maxFogTravel = 1.0/FOG_DENSITY;
 
-    for(int i=0; i<BOUNCE_LIMIT; ++i) {
+    for(int i=0; i<u_BounceLimit; ++i) {
         bool hitAnything = HitHittableList(ray, hitRecord);
-        
-        vec2 seed = mod(
-            abs(
-            vec2(Hashf(ray.direction.x), Hashf(ray.direction.y) +
-            Hash(i) +
-            Hash(u_FrameIndex) +
-            vec2(Hashf(hitRecord.hitPoint.x), Hashf(hitRecord.hitPoint.y)) +
-            vec2(Hashf(u_RandSeed.x), Hashf(u_RandSeed.y))
-            )), vec2(400, 600)
-        ) / vec2(400, 600);
+
+        if (u_BounceLimit == 1) {
+            return vec3(hitRecord.normal);
+        } 
+
+        vec2 seed = mod(vec2(
+            Hashf(ray.origin.x + ray.direction.y + u_FrameIndex + u_RandSeed.x * u_BounceLimit),
+            Hashf(ray.origin.y + ray.direction.z + i + u_RandSeed.y * u_BounceLimit)
+        ), vec2(100, 100))/ 100;
         
         // handle volumetric scattering
-        if (VolumetricScatter(hitRecord, ray, rayColour, seed, maxFogTravel)) {
+        if (VolumetricScatter(hitRecord, ray, rayColour, seed-vec2(0.31), maxFogTravel)) {
            continue;
         }
 
@@ -240,33 +336,30 @@ vec3 RayColour(Ray ray) {
             vec3 skybox_texture = texture(skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
             return rayColour*skybox_texture;
         } 
-        
-        Hittable object = u_Hittable[hitRecord.HittableIndex];
-        Material material = object.material;
+
+        Material material = hitRecord.material;
 
         if (material.isLight) {
             return rayColour * material.colour;
         }
 
         vec3 nextDirection;
-        if(texture(u_GrayNoise, seed).x < material.transparency) {
-            nextDirection = TransparentScatter(hitRecord, object, ray);
+        if(texture(u_RgbNoise, seed+vec2(0.21, 0.1)).x < material.transparency) {
+            nextDirection = TransparentScatter(hitRecord, material, ray);
         } else {
-
-            vec3 diffuseDir = normalize(hitRecord.normal + normalize(texture(u_RgbNoise, seed+vec2(0.02)).xyz)*material.roughness);
+            vec3 diffuseDir = normalize(hitRecord.normal + (2*texture(u_RgbNoise, seed-vec2(0.02, 0.3)).xyz-1)*material.roughness);
             vec3 specularDir = reflect(ray.direction, hitRecord.normal);
 
-            bool isSpecular = texture(u_GrayNoise, seed+vec2(0.03)).x < (1-material.roughness);
+            bool isSpecular = texture(u_RgbNoise, seed+vec2(0.03, 0.01)).y < (1-material.roughness);
 
             specularDir = mix(specularDir, diffuseDir, material.roughness);
 
             nextDirection = isSpecular ? specularDir : diffuseDir;
             rayColour *= isSpecular ? mix(material.specularColour, material.colour, material.metallic) : material.colour;
         }
-        vec3 offset = 1e-3 * nextDirection;
-        ray = Ray(hitRecord.hitPoint + offset, normalize(nextDirection), 1);
+        ray = Ray(hitRecord.hitPoint + 1e-4 * nextDirection, nextDirection, 1);
     }
-    return vec3(0.0);
+    return vec3(0.1);
 }
 
 

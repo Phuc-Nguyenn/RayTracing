@@ -11,7 +11,7 @@ struct Material {
     float metallic;
     float transparency;
     float refractionIndex;
-    bool isLight;
+    float isLight;
 
     Material(Vector3f&& colour, Vector3f specularColour = Vector3f(1.0, 1.0, 1.0), float roughness = 1.0, float metallic = 0.0, float transparency = 0.0, float refractionIndex = 0.0, bool isLight = false) :
         colour(colour),

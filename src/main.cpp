@@ -19,8 +19,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define SCREEN_WIDTH 1280   
-#define SCREEN_HEIGHT 720
+#define SCREEN_WIDTH 600
+#define SCREEN_HEIGHT 400
 
 /* keys state array */
 bool keys[1024] = {false};
@@ -29,24 +29,24 @@ static Scene CreateScene(unsigned int shaderProgramId)
 {
     Scene scene(shaderProgramId);
 
-    scene.SetCamera({{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 120.0f});
+    scene.SetCamera({{-8.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 120.0f});
 
     // Ground plane
-    scene.AddObject(std::make_unique<Sphere>(Vector3f{0.0, 0.0, -1000.0}, 1000.0, Material::Lambertian{{0.5, 0.5, 0.5}}));
+    // scene.AddShape(std::make_unique<Sphere>(Vector3f{0.0, 0.0, -1000.0}, 1000.0, Material::Lambertian{{0.5, 0.5, 0.5}}));
 
-    for (int i = 0; i <= 3; ++i)
-    {
-        for (int j = 0; j <= 3; ++j)
-        {
-            scene.AddObject(std::make_unique<Sphere>(Vector3f{i * 3.0, j * 3.0, 1.0}, 1.0, Material::Metallic({1.0, 0.0f, 0.0}, i * 0.3, j * 0.3)));
-        }
-    }
+    // for (int i = 0; i <= 3; ++i)
+    // {
+    //     for (int j = 0; j <= 3; ++j)
+    //     {
+    //         scene.AddShape(std::make_unique<Sphere>(Vector3f{i * 3.0, j * 3.0, 1.0}, 1.0, Material::Metallic({1.0, 0.0f, 0.0}, i * 0.3, j * 0.3)));
+    //     }
+    // }
 
-    // scene.AddObject(std::make_unique<Sphere>(Vector3f{-3.0, -3.0, 2.0}, 2.0, Material::Transparent{{1.0f, 1.0f, 1.0f}, 0.9, 1.33}));
-    scene.AddObject(std::make_unique<Sphere>(Vector3f{12.0, -5.0, 10.0}, 5.0, Material::LightSource{{1.0f, 1.0f, 1.0f}}));
+    // scene.AddShape(std::make_unique<Sphere>(Vector3f{-3.0, -3.0, 2.0}, 2.0, Material::Transparent{{1.0f, 1.0f, 1.0f}, 0.9, 1.33}));
+    // scene.AddShape(Sphere(Vector3f{0.0, 30.0, 160.0}, 80.0, Material::LightSource{{1.0f, 1.0f, 1.0f}}));
     // Bright Lambertian for ambient lighting effect
-    // scene.AddObject(std::make_unique<Sphere>(Vector3f{100.0, 100.0, 1200.0}, 75, Material::LightSource{{1.0, 1.0, 1.0}}));
-    // scene.AddObject(std::make_unique<Sphere>(Vector3f{-120.0, 2000.0, 2000.0}, 1000, Material::LightSource{{1.0, 1.0, 1.0}}));
+    // scene.AddShape(std::make_unique<Sphere>(Vector3f{100.0, 100.0, 1200.0}, 75, Material::LightSource{{1.0, 1.0, 1.0}}));
+    // scene.AddShape(std::make_unique<Sphere>(Vector3f{-120.0, 2000.0, 2000.0}, 1000, Material::LightSource{{1.0, 1.0, 1.0}}));
 
     auto screenResolutionUniformLocation = glGetUniformLocation(shaderProgramId, "screenResolution");
     glUniform2f(screenResolutionUniformLocation, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -105,10 +105,10 @@ static void LoadNoiseTexture(unsigned int shaderProgramId, std::string noiseText
     GLCALL(glBindTexture(GL_TEXTURE_2D, noiseTextureID));
 
     int width, height, nrChannels;
-    unsigned char *data = stbi_load(noiseTexturePath.c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
+    unsigned char *data = stbi_load(noiseTexturePath.c_str(), &width, &height, &nrChannels, STBI_rgb);
     if (data)
     {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -172,8 +172,19 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
 
     /** code for Skybox  */
     LoadSkybox(shaderProgramId, skyBoxPath, 1);
-    LoadNoiseTexture(shaderProgramId, "/mnt/c/Users/nlgph/CodeProjects/MiniShader/RayTracer/Textures/Noise/rgbNoise.png", "u_GrayNoise", 2);
-    LoadNoiseTexture(shaderProgramId, "/mnt/c/Users/nlgph/CodeProjects/MiniShader/RayTracer/Textures/Noise/rgbNoise.png", "u_RgbNoise", 3);
+
+    /** rng noise textures */
+    //LoadNoiseTexture(shaderProgramId, "./Textures/Noise/grayscaleNoise.png", "u_GrayNoise", 2);
+    LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
+
+    scene.LoadObjects({
+        "./Objects/teapot.txt",
+        "./Objects/surface.txt",
+        "./Objects/room.txt",
+        "./Objects/cube_light_G.txt",
+        "./Objects/cube_light_R.txt",
+        "./Objects/cube_light_B.txt"
+    });
 
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
     auto timePoint = std::chrono::steady_clock::now();
@@ -232,10 +243,9 @@ int main(int argc, char **argv)
 {
     if (argc != 4)
     {
-        std::cerr << "Usage: " << argv[0] << " <vertex_shader_path> <fragment_shader_path> <skybox_path>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <absolute_path_prefix> <rel_vertex_shader_path> <rel_fragment_shader_path> <rel_skybox_path>" << std::endl;
         return EXIT_FAILURE;
     }
-
     std::string vertexShaderPath = argv[1];
     std::string fragmentShaderPath = argv[2];
     std::string skyboxPath = argv[3];
