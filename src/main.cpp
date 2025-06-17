@@ -19,8 +19,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define SCREEN_WIDTH 600
-#define SCREEN_HEIGHT 400
+#define SCREEN_WIDTH 1080
+#define SCREEN_HEIGHT 720
 
 /* keys state array */
 bool keys[1024] = {false};
@@ -45,7 +45,7 @@ static Scene CreateScene(unsigned int shaderProgramId)
     // scene.AddShape(std::make_unique<Sphere>(Vector3f{-3.0, -3.0, 2.0}, 2.0, Material::Transparent{{1.0f, 1.0f, 1.0f}, 0.9, 1.33}));
     // scene.AddShape(Sphere(Vector3f{0.0, 30.0, 160.0}, 80.0, Material::LightSource{{1.0f, 1.0f, 1.0f}}));
     // Bright Lambertian for ambient lighting effect
-    // scene.AddShape(std::make_unique<Sphere>(Vector3f{100.0, 100.0, 1200.0}, 75, Material::LightSource{{1.0, 1.0, 1.0}}));
+    scene.AddShape(Sphere(Vector3f{100.0, 600.0, 1200.0}, 800, Material::LightSource{{1.0, 1.0, 1.0}}));
     // scene.AddShape(std::make_unique<Sphere>(Vector3f{-120.0, 2000.0, 2000.0}, 1000, Material::LightSource{{1.0, 1.0, 1.0}}));
 
     auto screenResolutionUniformLocation = glGetUniformLocation(shaderProgramId, "screenResolution");
@@ -178,12 +178,13 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
 
     scene.LoadObjects({
-        "./Objects/teapot.txt",
-        "./Objects/surface.txt",
-        "./Objects/room.txt",
-        "./Objects/cube_light_G.txt",
-        "./Objects/cube_light_R.txt",
-        "./Objects/cube_light_B.txt"
+        //"./Objects/teapot1.txt",
+        "./Objects/teapot2.txt",
+        "./Objects/surface.txt"
+        // "./Objects/room.txt",
+       // "./Objects/cube_light_G.txt",
+        // "./Objects/cube_light_R.txt",
+        //"./Objects/cube_light_B.txt"
     });
 
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));

@@ -4,7 +4,7 @@ out vec3 color;
 
 #define INF 1.0/0.0
 #define MAX_HITTABLE_COUNT 8
-#define MAX_OBJ_COUNT 16
+#define MAX_OBJ_COUNT 256
 #define SPHERE 0
 
 struct Material {
@@ -62,7 +62,7 @@ uniform vec3 u_RandSeed;
 uniform sampler2D u_Accumulation;
 //uniform sampler2D u_GrayNoise;
 uniform sampler2D u_RgbNoise;
-uniform sampler1D u_Triangles;
+uniform samplerBuffer u_Triangles;
 uniform uint u_TrianglesCount;
 
 struct Object { // represents a grouping of triangles
@@ -173,9 +173,9 @@ bool hitSphere(Sphere sphere, Ray r, inout HitRecord hitRecord) {
 Triangle getTriangle(int index) {
     Triangle triangle;
     int bufferIndex = index*3;
-    triangle.position = texelFetch(u_Triangles, bufferIndex, 0).xyz;
-    triangle.position2 = texelFetch(u_Triangles, bufferIndex + 1, 0).xyz;
-    triangle.position3 = texelFetch(u_Triangles, bufferIndex + 2, 0).xyz;
+    triangle.position = texelFetch(u_Triangles, bufferIndex).xyz;
+    triangle.position2 = texelFetch(u_Triangles, bufferIndex + 1).xyz;
+    triangle.position3 = texelFetch(u_Triangles, bufferIndex + 2).xyz;
     return triangle;
 }
 
@@ -214,6 +214,8 @@ bool hitTriangle(inout Triangle triangle, Ray r, inout HitRecord hitrecord) {
     return true;
 }
 
+#define VISUALISE_CLUSTERS false
+
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
     hitRecord.hitAnything = false;
@@ -230,11 +232,25 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
         }
     }
 
-    HitRecord hitRecordDiscard;
+    HitRecord boundingSphereHit;
     for(int j = 0; j < u_ObjectsCount; j++) {
-        if(!hitSphere(Sphere(u_Objects[j].position, u_Objects[j].scale), ray, hitRecordDiscard))
+        if(hitSphere(Sphere(u_Objects[j].position, u_Objects[j].scale), ray, boundingSphereHit)) {
+            if(VISUALISE_CLUSTERS && hitRecord.t > boundingSphereHit.t) {
+                hitRecord = boundingSphereHit;
+                hitRecord.material = u_Objects[j].material;
+                hitRecord.hitAnything = true;
+            }
+        } else {
             continue;
+        }
         
+        if(VISUALISE_CLUSTERS) 
+            continue;
+
+        if(hitRecord.t < boundingSphereHit.t && boundingSphereHit.frontFace) {
+            continue;
+        }
+
         Material material = u_Objects[j].material;
     
         int trianglesIndexStart = u_Objects[j].trianglesStartIndex;
@@ -269,7 +285,7 @@ vec3 TransparentScatter(inout HitRecord hitRecord, inout Material material, inou
     return reflect(ray.direction, hitRecord.normal);
 }
 #define FOG_DENSITY 0.00
-#define FOG_HEIGHT 32.0
+#define FOG_HEIGHT 12.0
  
 bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colour, vec2 seed, const float maxFogTravel) {
     // find out if ray will across the fod boundary
@@ -286,7 +302,7 @@ bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colo
         fogScope.origin = ray.origin + ray.direction * distanceToFog;
     } else if (ray.direction.z <= 0.0 && ray.origin.z <= FOG_HEIGHT) { // ray is inside the fog
         fogScope.magnitude = hitRecord.t;
-    } 
+    }
 
     bool hitsLight = false;
     if(hitRecord.hitAnything && hitRecord.material.isLight) 
@@ -318,13 +334,13 @@ vec3 RayColour(Ray ray) {
     for(int i=0; i<u_BounceLimit; ++i) {
         bool hitAnything = HitHittableList(ray, hitRecord);
 
-        if (u_BounceLimit == 1) {
-            return vec3(hitRecord.normal);
+        if (VISUALISE_CLUSTERS || u_BounceLimit == 1) {
+            return vec3(abs(hitRecord.normal));
         } 
 
         vec2 seed = mod(vec2(
-            Hashf(ray.origin.x + ray.direction.y + u_FrameIndex + u_RandSeed.x * u_BounceLimit),
-            Hashf(ray.origin.y + ray.direction.z + i + u_RandSeed.y * u_BounceLimit)
+            Hashf(ray.origin.x + ray.direction.y) + Hash(i) + Hash(u_FrameIndex) + Hashf(u_RandSeed.x * u_BounceLimit),
+            Hashf(ray.origin.y + ray.direction.z) + Hash(i+120) + Hashf(u_RandSeed.y * u_BounceLimit)
         ), vec2(100, 100))/ 100;
         
         // handle volumetric scattering

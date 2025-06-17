@@ -102,4 +102,8 @@ public:
     unsigned int getType() const override {
         return type;
     }
+
+    Vector3f GetAveragePosition() {
+        return (position + position2 + position3)/3;
+    }
 };

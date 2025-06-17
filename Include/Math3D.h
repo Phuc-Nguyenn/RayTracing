@@ -72,6 +72,22 @@ struct Vector3f {
         );
     };
 
+    Vector3f operator*(Vector3f v) const {
+        return Vector3f(
+            x * v.x,
+            y * v.y,
+            z * v.z
+        );
+    };
+
+    Vector3f operator/(float div) const {
+        return Vector3f(
+            x / div,
+            y / div,
+            z / div
+        );
+    };
+
     Vector3f operator+(const Vector3f& v) const {
         return Vector3f(
             x + v.x,
