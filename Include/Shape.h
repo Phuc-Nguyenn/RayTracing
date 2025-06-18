@@ -107,3 +107,20 @@ public:
         return (position + position2 + position3)/3;
     }
 };
+
+
+class Tri {
+public:
+    Vector3f pos1;
+    Vector3f pos2;
+    Vector3f pos3;
+    int materialsIndex;
+
+    Tri(Vector3f pos1, Vector3f pos2, Vector3f pos3, int materialsIndex = 0)
+    : pos1(pos1), pos2(pos2), pos3(pos3), materialsIndex(materialsIndex) {
+    }
+
+    Vector3f Centroid() const{
+        return (pos1 + pos2 + pos3)/3;
+    }
+};
