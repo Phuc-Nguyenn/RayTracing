@@ -13,13 +13,18 @@ public:
     Vector3f mini;
     int leftChildIndex; // added for completeness but would be the next index in the vector
     int rightChildIndex;
-    int triangleIndex;
+    int triangleStartIndex;  // start index of triangles for leaf nodes
+    int triangleCount;       // number of triangles for leaf nodes
 
     BoundingBox() = default;
 
-    BoundingBox(Vector3f maxi, Vector3f mini, int leftChildIndex = -1, int rightChildIndex = -1, int triangleIndex = -1)
-    : maxi(maxi), mini(mini), rightChildIndex(rightChildIndex), triangleIndex(triangleIndex) {
+    BoundingBox(Vector3f maxi, Vector3f mini, int leftChildIndex = -1, int rightChildIndex = -1, int triangleStartIndex = -1, int triangleCount = 0)
+    : maxi(maxi), mini(mini), leftChildIndex(leftChildIndex), rightChildIndex(rightChildIndex), triangleStartIndex(triangleStartIndex), triangleCount(triangleCount) {
     }
+
+    // Helper methods to check node type
+    bool IsLeaf() const { return triangleCount > 0; }
+    bool IsInternal() const { return leftChildIndex != -1 || rightChildIndex != -1; }
 };
 
 /**
@@ -30,6 +35,7 @@ class BvhTree
 private:
     std::vector<BoundingBox> boundingBoxes;
     std::vector<Tri> triangles;
+    int maxTrianglesPerLeaf; // configurable threshold for when to stop subdividing
 
     enum Dimension {
         x = 0,
@@ -52,10 +58,16 @@ private:
     // returns the index of the box made in the boxes container, for the current level it is equal to the size - 1 before left and right have been explored (because they add more child boxes)
     int MakeBox(int l, int r) {
         
+        // Base case: empty range
+        if (l >= r) {
+            std::cout << "Warning: empty range [" << l << ", " << r << ")" << std::endl;
+            return -1;
+        }
+
         // create a new bounding box for all triangles
         BoundingBox newBox;
         Vector3f miniBounds(FLT_MAX, FLT_MAX, FLT_MAX);
-        Vector3f maxiBounds(FLT_MIN, FLT_MIN, FLT_MIN);
+        Vector3f maxiBounds(-FLT_MAX, -FLT_MAX, -FLT_MAX); // Fixed: use -FLT_MAX instead of FLT_MIN
         for(int i=l; i<r; ++i) {
             // get the mini and maxi bounds
             const Vector3f verts[3] = { triangles[i].pos1, triangles[i].pos2, triangles[i].pos3 };
@@ -71,52 +83,82 @@ private:
         newBox.mini = miniBounds;
         newBox.maxi = maxiBounds;
 
-        // partition int [left] [overlap] [right]
-        std::pair<Dimension, float> splitResult = SplitLongestDimension(newBox);
-        auto lIter = triangles.begin();
-        auto rIter = triangles.begin();
-        std::advance(lIter, l);
-        std::advance(rIter, r);
-        float splitValue = splitResult.second;
-        int midIdx = std::distance(triangles.begin(), std::partition(lIter, rIter, [&](const Tri& triangle) {
-            Vector3f centroid = triangle.Centroid();
-            if (splitResult.first == Dimension::x) {
-            return centroid.x < splitValue;
-            } else if (splitResult.first == Dimension::y) {
-            return centroid.y < splitValue;
-            } else { // Dimension::z
-            return centroid.z < splitValue;
-            }
-        }));
-
-        std::cout << "processing [" << l << ", " << r << ")" << std::endl;
+        std::cout << "processing [" << l << ", " << r << ") with " << (r - l) << " triangles" << std::endl;
         boundingBoxes.push_back(newBox); // add to bounding boxes container and get the index
         int myIndex = boundingBoxes.size() - 1;
-        if(r - l > 1) {
+        
+        if(r - l > maxTrianglesPerLeaf) {
+            // partition int [left] [overlap] [right]
+            std::pair<Dimension, float> splitResult = SplitLongestDimension(newBox);
+            auto lIter = triangles.begin();
+            auto rIter = triangles.begin();
+            std::advance(lIter, l);
+            std::advance(rIter, r);
+            float splitValue = splitResult.second;
+            auto partitionPoint = std::partition(lIter, rIter, [&](const Tri& triangle) {
+                Vector3f centroid = triangle.Centroid();
+                if (splitResult.first == Dimension::x) {
+                    return centroid.x < splitValue;
+                } else if (splitResult.first == Dimension::y) {
+                    return centroid.y < splitValue;
+                } else { // Dimension::z
+                    return centroid.z < splitValue;
+                }
+            });
+            int midIdx = std::distance(triangles.begin(), partitionPoint);
+
+            // Prevent degenerate splits that could cause infinite recursion
+            if (midIdx == l || midIdx == r) {
+                std::cout << "Warning: degenerate partition detected. All centroids on one side of split." << std::endl;
+                // Sort triangles by centroid along the chosen dimension
+                std::sort(lIter, rIter, [&](const Tri& a, const Tri& b) {
+                    Vector3f centroidA = a.Centroid();
+                    Vector3f centroidB = b.Centroid();
+                    if (splitResult.first == Dimension::x) return centroidA.x < centroidB.x;
+                    else if (splitResult.first == Dimension::y) return centroidA.y < centroidB.y;
+                    else return centroidA.z < centroidB.z;
+                });
+                
+                // Split in the middle of the sorted range
+                midIdx = l + (r - l) / 2;
+                std::cout << "Sorted split: left=[" << l << "," << midIdx << "), right=[" << midIdx << "," << r << ")" << std::endl;
+            }
+
             boundingBoxes[myIndex].leftChildIndex = MakeBox(l, midIdx);
             boundingBoxes[myIndex].rightChildIndex = MakeBox(midIdx, r);
         } else {
-            if(r - l != 1) {
-                std::cout << "expected leaf node l - r did not equal 1, instead equals: " << l - r << std::endl;
-            } else {
-                boundingBoxes[myIndex].triangleIndex = l;
-            }
+            // Leaf node - can contain multiple triangles
+            std::cout << "Creating leaf node with " << (r - l) << " triangles at indices [" << l << ", " << r << ")" << std::endl;
+            boundingBoxes[myIndex].triangleStartIndex = l;
+            boundingBoxes[myIndex].triangleCount = r - l;
         }
         return myIndex;
     };
 
 public:
-    BvhTree() = default;
-    BvhTree(std::vector<Tri> triangles) : triangles(triangles) {}
+    BvhTree() : maxTrianglesPerLeaf(1) {}
+    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf = 8) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
 
-    void SetTriangles(std::vector<Tri> triangles) {
-        triangles = triangles;
+    void SetTriangles(std::vector<Tri> newTriangles) {
+        this->triangles = std::move(newTriangles); // Fixed: assign to member variable
+        boundingBoxes.clear(); // Clear previous tree when setting new triangles
+    }
+
+    void SetMaxTrianglesPerLeaf(int maxTriangles) {
+        maxTrianglesPerLeaf = std::max(1, maxTriangles); // Ensure at least 1
+    }
+
+    int GetMaxTrianglesPerLeaf() const {
+        return maxTrianglesPerLeaf;
     }
 
     std::vector<BoundingBox> BuildTree() {
+        if (triangles.empty()) {
+            std::cout << "Warning: no triangles to build tree from" << std::endl;
+            return boundingBoxes;
+        }
+        boundingBoxes.clear(); // Clear previous tree
         MakeBox(0, triangles.size());
         return boundingBoxes;
     }
-
-
 };

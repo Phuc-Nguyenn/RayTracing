@@ -53,8 +53,6 @@ class Scene {
         unsigned int shaderProgramId;
         unsigned int frameIndex;
         Camera camera;
-        // std::vector<std::vector<Triangle>> objects;
-        // int trianglesCount;
 
         std::vector<Tri> triangles;
         std::vector<std::unique_ptr<Material::Material>> materials;
@@ -138,65 +136,8 @@ class Scene {
                     return false;
                 }
             }
-            
-            // // each cluster is its own object so add numberOfClusters amount of new objects 
-            // for(int i=0; i<numberOfClusters; ++i) {
-            //     if(demultiplexedClusters[i].size() == 0) {
-            //         continue;
-            //     }
-            //     int prevTrianglesCount = trianglesCount;
-            //     trianglesCount += demultiplexedClusters[i].size();
-            //     auto positionLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"position"}});
-            //     auto scaleLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"scale"}});
-            //     auto trianglesStartIndexLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"trianglesStartIndex"}});
-            //     auto trianglesCountLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"trianglesCount"}});
-            //     auto colourLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"material"}, {"colour"}});
-            //     auto specularcolourLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"material"}, {"specularColour"}});
-            //     auto roughnessLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"material"}, {"roughness"}});
-            //     auto metallicLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"material"}, {"metallic"}});
-            //     auto transparencyLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"material"}, {"transparency"}});
-            //     auto refractionIdxLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"material"}, {"refractionIndex"}});
-            //     auto isLightLoc = GetUniformLocationIdx("u_Objects", objectsIndex, {{"material"}, {"isLight"}});
-                
-            //     std::cout << "object index: " << objectsIndex << ", start index: " << prevTrianglesCount << ", cluster triangle count: " << trianglesCount - prevTrianglesCount << std::endl;
-            //     GLCALL(glUniform3f(positionLoc, meanCenters[i].x, meanCenters[i].y, meanCenters[i].z));
-            //     GLCALL(glUniform1f(scaleLoc, clusterRadii[i]+0.01));
-            //     GLCALL(glUniform1i(trianglesStartIndexLoc, prevTrianglesCount));
-            //     GLCALL(glUniform1i(trianglesCountLoc, trianglesCount - prevTrianglesCount));
-            //     GLCALL(glUniform3f(colourLoc, material->colour.x, material->colour.y, material->colour.z));
-            //     GLCALL(glUniform3f(specularcolourLoc, material->specularColour.x, material->specularColour.y, material->specularColour.z));
-            //     GLCALL(glUniform1f(roughnessLoc, material->roughness));
-            //     GLCALL(glUniform1f(metallicLoc, material->metallic));
-            //     GLCALL(glUniform1f(transparencyLoc, material->transparency));
-            //     GLCALL(glUniform1f(refractionIdxLoc, material->refractionIndex));
-            //     GLCALL(glUniform1i(isLightLoc, material->isLight ? 1 : 0));
-            //     objectsIndex++;
-            // }
-            
             return true;
         };
-        
-        void FlattenObjectsToImage(std::vector<float>& allTriangles) {
-            // for(const auto& object : objects) {
-            //     for(const auto& triangle : object) {
-            //         // Position 1
-            //         allTriangles.push_back(triangle.getPosition().x);
-            //         allTriangles.push_back(triangle.getPosition().y);
-            //         allTriangles.push_back(triangle.getPosition().z);
-                    
-            //         // Position 2
-            //         allTriangles.push_back(triangle.getPosition2().x);
-            //         allTriangles.push_back(triangle.getPosition2().y);
-            //         allTriangles.push_back(triangle.getPosition2().z);
-                    
-            //         // Position 3
-            //         allTriangles.push_back(triangle.getPosition3().x);
-            //         allTriangles.push_back(triangle.getPosition3().y);
-            //         allTriangles.push_back(triangle.getPosition3().z);
-            //     }
-            // }
-        }
-
 
     public:
         
@@ -251,7 +192,7 @@ class Scene {
 
         std::vector<float> FlattenBoundingBoxes(const std::vector<BoundingBox>& boundingBoxes) {
             std::vector<float> flattened;
-            flattened.reserve(boundingBoxes.size() * 8);
+            flattened.reserve(boundingBoxes.size() * (sizeof(BoundingBox)/sizeof(float)));
             for (const auto& box : boundingBoxes) {
             // Use 'mini' and 'maxi' as per the BoundingBox definition
             flattened.push_back(box.mini.x);
@@ -260,11 +201,10 @@ class Scene {
             flattened.push_back(box.maxi.x);
             flattened.push_back(box.maxi.y);
             flattened.push_back(box.maxi.z);
-            // Store left and right child indices (or triangle index)
             flattened.push_back(static_cast<float>(box.leftChildIndex));
             flattened.push_back(static_cast<float>(box.rightChildIndex));
-            // Optionally, you can also store triangleIndex if needed
-            // flattened.push_back(static_cast<float>(box.triangleIndex));
+            flattened.push_back(static_cast<float>(box.triangleStartIndex));
+            flattened.push_back(static_cast<float>(box.triangleCount));
             }
             return flattened;
         }
@@ -272,44 +212,69 @@ class Scene {
         void LoadObjects(const std::vector<std::string>& objectFilePaths) {
             int numberOfFiles = objectFilePaths.size();
             for(int i=0; i<numberOfFiles; ++i) {
-            if(ReadInObjectFile(objectFilePaths[i])) {
-                std::cout << "successfully read in object from: " << objectFilePaths[i] << std::endl;
+                if(ReadInObjectFile(objectFilePaths[i])) {
+                    std::cout << "successfully read in object from: " << objectFilePaths[i] << std::endl;
+                }
             }
-            }
-
             // create the Bvh tree
             BvhTree bvhtree(triangles);
             std::vector<BoundingBox> boundingBoxes = bvhtree.BuildTree();
-
-            
 
             // Flatten all triangles into a single vector
             std::vector<float> trianglesData = FlattenTriangles(triangles);
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
             
-            // // Create a buffer texture for triangle data
-            // GLuint triangleBufferId;
-            // GLCALL(glGenBuffers(1, &triangleBufferId));
-            // GLCALL(glBindBuffer(GL_TEXTURE_BUFFER, triangleBufferId));
-            // GLCALL(glBufferData(GL_TEXTURE_BUFFER, objectsData.size() * sizeof(float), objectsData.data(), GL_STATIC_DRAW));
+            SendDataAsTextureBuffer(trianglesData, triangles.size(), "u_Triangles", 3);
+            SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 4);
 
-            // // Create the texture buffer object
-            // GLuint triangleTextureId;
-            // GLCALL(glGenTextures(1, &triangleTextureId));
-            // GLCALL(glBindTexture(GL_TEXTURE_BUFFER, triangleTextureId));
-            // GLCALL(glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, triangleBufferId));
-
-            // // Bind to texture unit 3
-            // GLCALL(glActiveTexture(GL_TEXTURE3));
-            // GLCALL(glBindTexture(GL_TEXTURE_BUFFER, triangleTextureId));
-
-            // glUniform1i(glGetUniformLocation(shaderProgramId, "u_Triangles"), 3);  // '0' corresponds to GL_TEXTURE0
-            // glUniform1ui(glGetUniformLocation(shaderProgramId, "u_TrianglesCount"), triangles.size());
+            SendMaterials(materials);
             
             std::cout << "triangles count: " << triangles.size() << std::endl;
             std::cout << "floats count: " << trianglesData.size() << std::endl;
         }
 
+        void SendDataAsTextureBuffer(const std::vector<float>& data, const int count, const std::string& uniformName, const int textureUnit) {
+            // Create a buffer texture for triangle data
+            GLuint bufferId;
+            GLCALL(glGenBuffers(1, &bufferId));
+            GLCALL(glBindBuffer(GL_TEXTURE_BUFFER, bufferId));
+            GLCALL(glBufferData(GL_TEXTURE_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW));
+
+            // Create the texture buffer object
+            GLuint textureId;
+            GLCALL(glGenTextures(1, &textureId));
+            GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
+            GLCALL(glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, bufferId));
+
+            // Bind to texture unit 3
+            GLCALL(glActiveTexture(GL_TEXTURE0 + textureUnit));
+            GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
+
+            glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit);  // '0' corresponds to GL_TEXTURE0
+            glUniform1ui(glGetUniformLocation(shaderProgramId, (uniformName + "Count").c_str()), count);
+        }
+
+        void SendMaterials(const std::vector<std::unique_ptr<Material::Material>>& materials) {
+            for(int i=0; i<materials.size(); ++i)
+            {
+                const auto& material = *materials[i];
+                auto colourLoc = GetUniformLocationIdx("u_Materials", i, {{"colour"}});
+                auto specularcolourLoc = GetUniformLocationIdx("u_Materials", i, {{"specularColour"}});
+                auto roughnessLoc = GetUniformLocationIdx("u_Materials", i, {{"roughness"}});
+                auto metallicLoc = GetUniformLocationIdx("u_Materials", i, {{"metallic"}});
+                auto transparencyLoc = GetUniformLocationIdx("u_Materials", i, {{"transparency"}});
+                auto refractionIdxLoc = GetUniformLocationIdx("u_Materials", i, {{"refractionIndex"}});
+                auto isLightLoc = GetUniformLocationIdx("u_Materials", i, {{"isLight"}});
+                glUniform3f(colourLoc, material.colour.x, material.colour.y, material.colour.z);
+                glUniform3f(specularcolourLoc, material.specularColour.x, material.specularColour.y, material.specularColour.z);
+                glUniform1f(roughnessLoc, material.roughness);
+                glUniform1f(metallicLoc, material.metallic);
+                glUniform1f(transparencyLoc, material.transparency);
+                glUniform1f(refractionIdxLoc, material.refractionIndex);
+                glUniform1i(isLightLoc, material.isLight ? 1 : 0);
+            }
+            glUniform1i(glGetUniformLocation(shaderProgramId, "u_MaterialsCount"), materials.size()); 
+        }
 
         void AddShape(const Shape& shape) {
 
@@ -319,13 +284,13 @@ class Scene {
             auto position3Loc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position3"}});
             auto directionLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"direction"}});
             auto scaleLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"scale"}});
-            auto colourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"colour"}});
-            auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"specularColour"}});
-            auto roughnessLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"roughness"}});
-            auto metallicLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"metallic"}});
-            auto transparencyLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"transparency"}});
-            auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"refractionIndex"}});
-            auto isLightLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"isLight"}});
+            auto colourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"colour"}});
+            auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"specularColour"}});
+            auto roughnessLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"roughness"}});
+            auto metallicLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"metallic"}});
+            auto transparencyLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"transparency"}});
+            auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"refractionIndex"}});
+            auto isLightLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"isLight"}});
            
             glUniform1ui(typeLoc, shape.getType());
             glUniform3f(positionLoc, shape.getPosition().x, shape.getPosition().y, shape.getPosition().z);
