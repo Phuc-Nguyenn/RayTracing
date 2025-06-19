@@ -136,8 +136,8 @@ private:
     };
 
 public:
-    BvhTree() : maxTrianglesPerLeaf(1) {}
-    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf = 100) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
+    BvhTree() : maxTrianglesPerLeaf(8) {}
+    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf = 8) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
 
     void SetTriangles(std::vector<Tri> newTriangles) {
         this->triangles = std::move(newTriangles); // Fixed: assign to member variable

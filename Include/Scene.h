@@ -164,32 +164,31 @@ class Scene {
             frameIndex = 0;
         }
 
-
-        std::vector<int> FlattenTrianglesMatIdx(const std::vector<Tri>& triangles) {
+        std::vector<int> FlattenTrianglesMatIdx(const std::vector<Tri>& reorderedTris) {
             std::vector<int> flattened;
-            flattened.reserve(triangles.size());
-            for(const auto& tri : triangles) {
+            flattened.reserve(reorderedTris.size());
+            for(const auto& tri : reorderedTris) {
                 flattened.push_back(tri.materialsIndex);
             }
             return flattened;
         }
 
-        std::vector<float> FlattenTrianglesVertices(const std::vector<Tri>& triangles) {
+        std::vector<float> FlattenTrianglesVertices(const std::vector<Tri>& reorderedTris) {
             std::vector<float> flattened;
-            flattened.reserve(triangles.size() * 9);
-            for (const auto& tri : triangles) {
-            // pos1
-            flattened.push_back(tri.pos1.x);
-            flattened.push_back(tri.pos1.y);
-            flattened.push_back(tri.pos1.z);
-            // pos2
-            flattened.push_back(tri.pos2.x);
-            flattened.push_back(tri.pos2.y);
-            flattened.push_back(tri.pos2.z);
-            // pos3
-            flattened.push_back(tri.pos3.x);
-            flattened.push_back(tri.pos3.y);
-            flattened.push_back(tri.pos3.z);
+            flattened.reserve(reorderedTris.size() * 9);
+            for (const auto& tri : reorderedTris) {
+                // pos1
+                flattened.push_back(tri.pos1.x);
+                flattened.push_back(tri.pos1.y);
+                flattened.push_back(tri.pos1.z);
+                // pos2
+                flattened.push_back(tri.pos2.x);
+                flattened.push_back(tri.pos2.y);
+                flattened.push_back(tri.pos2.z);
+                // pos3
+                flattened.push_back(tri.pos3.x);
+                flattened.push_back(tri.pos3.y);
+                flattened.push_back(tri.pos3.z);
             }
             return flattened;
         }
@@ -222,26 +221,23 @@ class Scene {
             // create the Bvh tree
             BvhTree bvhtree(triangles);
             auto [boundingBoxes, reorderedTriangles] = bvhtree.BuildTree();
-            for(const auto& box : boundingBoxes) {
-                std::cout << "BoundingBox: maxi(" 
-                          << box.maxi.x << ", " << box.maxi.y << ", " << box.maxi.z << ") "
-                          << "mini(" 
-                          << box.mini.x << ", " << box.mini.y << ", " << box.mini.z << ") "
-                          << "rightChildIndex: " << box.rightChildIndex << " "
-                          << "triangleStartIndex: " << box.triangleStartIndex << " "
-                          << "triangleCount: " << box.triangleCount << std::endl;
-            }
-
+            triangles = reorderedTriangles;
             // Flatten all triangles into a single vector
             std::vector<float> trianglesVertexData = FlattenTrianglesVertices(reorderedTriangles);
             std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(reorderedTriangles);
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
             
+            for(const auto& f : reorderedTriangles) {
+                std::cout << f.pos1.x << ", " << f.pos1.y << ", " << f.pos1.z << " | "
+                          << f.pos2.x << ", " << f.pos2.y << ", " << f.pos2.z << " | "
+                          << f.pos3.x << ", " << f.pos3.y << ", " << f.pos3.z << std::endl;
+            }
+
             SendDataAsTextureBuffer(trianglesVertexData, reorderedTriangles.size(), "u_Triangles", 3, GL_RGB32F);
             SendDataAsTextureBuffer(trianglesMatIdxData, reorderedTriangles.size(), "u_MaterialsIndex", 4, GL_R32I);
             SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 5, GL_RGB32F);
 
-            SendMaterials(materials);
+            SendSceneMaterials();
             
             std::cout << "triangles count: " << reorderedTriangles.size() << std::endl;
             std::cout << "floats count: " << trianglesVertexData.size() << std::endl;
@@ -249,32 +245,28 @@ class Scene {
 
         template<typename T>
         void SendDataAsTextureBuffer(const std::vector<T>& data, const int count, const std::string& uniformName, const int textureUnit, const unsigned int format) {
-            // Add error checking after each GL call
             if (data.empty()) {
                 std::cerr << "Warning: Empty data vector for " << uniformName << std::endl;
                 return;
             }
-            // Create a buffer texture for triangle data
             GLuint bufferId;
             GLCALL(glGenBuffers(1, &bufferId));
             GLCALL(glBindBuffer(GL_TEXTURE_BUFFER, bufferId));
             GLCALL(glBufferData(GL_TEXTURE_BUFFER, data.size() * sizeof(T), data.data(), GL_STATIC_DRAW));
 
-            // Create the texture buffer object
             GLuint textureId;
             GLCALL(glGenTextures(1, &textureId));
             GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
             GLCALL(glTexBuffer(GL_TEXTURE_BUFFER, format, bufferId));
 
-            // Bind to texture unit 3
             GLCALL(glActiveTexture(GL_TEXTURE0 + textureUnit));
             GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
 
-            GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit));  // '0' corresponds to GL_TEXTURE0
+            GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit));
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, (uniformName + "Count").c_str()), count));
         }
 
-        void SendMaterials(const std::vector<std::unique_ptr<Material::Material>>& materials) {
+        void SendSceneMaterials() {
             for(int i=0; i<materials.size(); ++i)
             {
                 const auto& material = *materials[i];

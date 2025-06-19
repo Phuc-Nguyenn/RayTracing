@@ -269,38 +269,57 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
         }
     }
 
-    int stack[MAX_STACK_SIZE];
-    int stackptr = 0;
-    if(u_BoundingBoxesCount > 0)
-        stack[stackptr++] = 0;
-    int leafhitNum = 0;
-    while(stackptr > 0) {
-        int indexBB = stack[--stackptr];
-        
-        BoundingBox aabb = getBoundingBox(indexBB);
-        if(!hitBoundingBox(ray, aabb)) { 
-            continue;
-        }
-        HitRecord hitRecordTmp;
-        if(aabb.triangleCount > 0 && aabb.triangleStartIndex >= 0){ // is leaf
-            for(int i=aabb.triangleStartIndex; i<aabb.triangleStartIndex + aabb.triangleCount; ++i) {
-                Triangle triangle = getTriangle(i);
-                if(hitTriangle(triangle, ray, hitRecordTmp)) {
-                    if(hitRecord.t > hitRecordTmp.t) {
-                        hitRecord = hitRecordTmp;
-                        hitRecord.material = u_Materials[triangle.materialIndex];
-                        hitRecord.hitAnything = true;
-                    }
-                }
+    HitRecord hitRecordTmp;
+    for(int i=0; i<u_TrianglesCount; ++i) {
+        Triangle triangle = getTriangle(i);
+        // if(triangle.position.x == 0.0)
+        //     return true;
+
+        if(hitTriangle(triangle, ray, hitRecordTmp)) {
+            if(hitRecord.t > hitRecordTmp.t) {
+                hitRecord = hitRecordTmp;
+                hitRecord.material = u_Materials[triangle.materialIndex];
+                hitRecord.hitAnything = true;
             }
-        } else {
-            if(stackptr > MAX_STACK_SIZE - 2) {
-                continue;
-            }
-            stack[stackptr++] = aabb.rightChildIndex;
-            stack[stackptr++] = indexBB + 1;
         }
     }
+
+
+    // int stack[MAX_STACK_SIZE];
+    // int stackptr = 0;
+    // if(u_BoundingBoxesCount > 0)
+    //     stack[stackptr++] = 0;
+    // int leafhitNum = 0;
+    // while(stackptr > 0) {
+    //     int indexBB = stack[--stackptr];
+        
+    //     BoundingBox aabb = getBoundingBox(indexBB);
+    //     if(!hitBoundingBox(ray, aabb)) { 
+    //         continue;
+    //     }
+    //     HitRecord hitRecordTmp;
+    //     if(aabb.triangleCount > 0 && aabb.triangleStartIndex >= 0){ // is leaf
+    //         for(int i=aabb.triangleStartIndex; i<aabb.triangleStartIndex + aabb.triangleCount; ++i) {
+    //             Triangle triangle = getTriangle(i);
+    //             if(triangle.materialIndex == 0)
+    //                 return true;
+
+    //             if(hitTriangle(triangle, ray, hitRecordTmp)) {
+    //                 if(hitRecord.t > hitRecordTmp.t) {
+    //                     hitRecord = hitRecordTmp;
+    //                     hitRecord.material = u_Materials[triangle.materialIndex];
+    //                     hitRecord.hitAnything = true;
+    //                 }
+    //             }
+    //         }
+    //     } else {
+    //         if(stackptr > MAX_STACK_SIZE - 2) {
+    //             continue;
+    //         }
+    //         stack[stackptr++] = aabb.rightChildIndex;
+    //         stack[stackptr++] = indexBB + 1;
+    //     }
+    // }
     return hitRecord.hitAnything;
 };
 
