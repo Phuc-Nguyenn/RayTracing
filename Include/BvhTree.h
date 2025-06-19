@@ -11,20 +11,20 @@ class BoundingBox {
 public:
     Vector3f maxi;
     Vector3f mini;
-    int leftChildIndex; // added for completeness but would be the next index in the vector
     int rightChildIndex;
     int triangleStartIndex;  // start index of triangles for leaf nodes
     int triangleCount;       // number of triangles for leaf nodes
 
-    BoundingBox() = default;
+    BoundingBox()
+    : maxi(Vector3f(0,0,0)), mini(Vector3f(0,0,0)), rightChildIndex(0), triangleStartIndex(0), triangleCount(0)
+    {}
 
-    BoundingBox(Vector3f maxi, Vector3f mini, int leftChildIndex = -1, int rightChildIndex = -1, int triangleStartIndex = -1, int triangleCount = 0)
-    : maxi(maxi), mini(mini), leftChildIndex(leftChildIndex), rightChildIndex(rightChildIndex), triangleStartIndex(triangleStartIndex), triangleCount(triangleCount) {
+    BoundingBox(Vector3f maxi, Vector3f mini, int rightChildIndex = -1, int triangleStartIndex = -1, int triangleCount = 0)
+    : maxi(maxi), mini(mini), rightChildIndex(rightChildIndex), triangleStartIndex(triangleStartIndex), triangleCount(triangleCount) {
     }
 
     // Helper methods to check node type
     bool IsLeaf() const { return triangleCount > 0; }
-    bool IsInternal() const { return leftChildIndex != -1 || rightChildIndex != -1; }
 };
 
 /**
@@ -80,8 +80,8 @@ private:
                 maxiBounds.z = std::max(maxiBounds.z, verts[j].z);
             }
         }
-        newBox.mini = miniBounds;
-        newBox.maxi = maxiBounds;
+        newBox.mini = miniBounds - Vector3f(0.001, 0.001, 0.001);
+        newBox.maxi = maxiBounds + Vector3f(0.001, 0.001, 0.001);
 
         std::cout << "processing [" << l << ", " << r << ") with " << (r - l) << " triangles" << std::endl;
         boundingBoxes.push_back(newBox); // add to bounding boxes container and get the index
@@ -124,7 +124,7 @@ private:
                 std::cout << "Sorted split: left=[" << l << "," << midIdx << "), right=[" << midIdx << "," << r << ")" << std::endl;
             }
 
-            boundingBoxes[myIndex].leftChildIndex = MakeBox(l, midIdx);
+            MakeBox(l, midIdx); // left child index is myindex + 1
             boundingBoxes[myIndex].rightChildIndex = MakeBox(midIdx, r);
         } else {
             // Leaf node - can contain multiple triangles
@@ -137,7 +137,7 @@ private:
 
 public:
     BvhTree() : maxTrianglesPerLeaf(1) {}
-    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf = 8) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
+    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf = 100) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
 
     void SetTriangles(std::vector<Tri> newTriangles) {
         this->triangles = std::move(newTriangles); // Fixed: assign to member variable
@@ -152,13 +152,13 @@ public:
         return maxTrianglesPerLeaf;
     }
 
-    std::vector<BoundingBox> BuildTree() {
+    std::pair<std::vector<BoundingBox>, std::vector<Tri>> BuildTree() {
         if (triangles.empty()) {
             std::cout << "Warning: no triangles to build tree from" << std::endl;
-            return boundingBoxes;
+        } else {
+            boundingBoxes.clear(); // Clear previous tree
+            MakeBox(0, triangles.size());
         }
-        boundingBoxes.clear(); // Clear previous tree
-        MakeBox(0, triangles.size());
-        return boundingBoxes;
+        return {boundingBoxes, triangles};
     }
 };

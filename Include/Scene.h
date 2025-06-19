@@ -155,9 +155,6 @@ class Scene {
             auto shapeCountLoc = glGetUniformLocation(shaderProgramId, "u_HittablesCount");
             GLCALL(glUniform1ui(shapeCountLoc, shapesIndex));
 
-            // GLCALL(auto objectsCountLoc = glGetUniformLocation(shaderProgramId, "u_ObjectsCount"));
-            // GLCALL(glUniform1i(objectsCountLoc, objectsIndex));
-
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, "u_FrameIndex"), frameIndex++));
             GLCALL(glUniform3f(glGetUniformLocation(shaderProgramId, "u_RandSeed"), float(std::rand()) / RAND_MAX, float(std::rand()) / RAND_MAX, float(std::rand()) / RAND_MAX));
         }
@@ -168,9 +165,18 @@ class Scene {
         }
 
 
-        std::vector<float> FlattenTriangles(const std::vector<Tri>& triangles) {
+        std::vector<int> FlattenTrianglesMatIdx(const std::vector<Tri>& triangles) {
+            std::vector<int> flattened;
+            flattened.reserve(triangles.size());
+            for(const auto& tri : triangles) {
+                flattened.push_back(tri.materialsIndex);
+            }
+            return flattened;
+        }
+
+        std::vector<float> FlattenTrianglesVertices(const std::vector<Tri>& triangles) {
             std::vector<float> flattened;
-            flattened.reserve(triangles.size() * 10);
+            flattened.reserve(triangles.size() * 9);
             for (const auto& tri : triangles) {
             // pos1
             flattened.push_back(tri.pos1.x);
@@ -184,24 +190,21 @@ class Scene {
             flattened.push_back(tri.pos3.x);
             flattened.push_back(tri.pos3.y);
             flattened.push_back(tri.pos3.z);
-            // material index
-            flattened.push_back(static_cast<float>(tri.materialsIndex));
             }
             return flattened;
         }
 
         std::vector<float> FlattenBoundingBoxes(const std::vector<BoundingBox>& boundingBoxes) {
             std::vector<float> flattened;
-            flattened.reserve(boundingBoxes.size() * (sizeof(BoundingBox)/sizeof(float)));
+            flattened.reserve(boundingBoxes.size() * 9);
             for (const auto& box : boundingBoxes) {
             // Use 'mini' and 'maxi' as per the BoundingBox definition
-            flattened.push_back(box.mini.x);
-            flattened.push_back(box.mini.y);
-            flattened.push_back(box.mini.z);
             flattened.push_back(box.maxi.x);
             flattened.push_back(box.maxi.y);
             flattened.push_back(box.maxi.z);
-            flattened.push_back(static_cast<float>(box.leftChildIndex));
+            flattened.push_back(box.mini.x);
+            flattened.push_back(box.mini.y);
+            flattened.push_back(box.mini.z);
             flattened.push_back(static_cast<float>(box.rightChildIndex));
             flattened.push_back(static_cast<float>(box.triangleStartIndex));
             flattened.push_back(static_cast<float>(box.triangleCount));
@@ -218,40 +221,57 @@ class Scene {
             }
             // create the Bvh tree
             BvhTree bvhtree(triangles);
-            std::vector<BoundingBox> boundingBoxes = bvhtree.BuildTree();
+            auto [boundingBoxes, reorderedTriangles] = bvhtree.BuildTree();
+            for(const auto& box : boundingBoxes) {
+                std::cout << "BoundingBox: maxi(" 
+                          << box.maxi.x << ", " << box.maxi.y << ", " << box.maxi.z << ") "
+                          << "mini(" 
+                          << box.mini.x << ", " << box.mini.y << ", " << box.mini.z << ") "
+                          << "rightChildIndex: " << box.rightChildIndex << " "
+                          << "triangleStartIndex: " << box.triangleStartIndex << " "
+                          << "triangleCount: " << box.triangleCount << std::endl;
+            }
 
             // Flatten all triangles into a single vector
-            std::vector<float> trianglesData = FlattenTriangles(triangles);
+            std::vector<float> trianglesVertexData = FlattenTrianglesVertices(reorderedTriangles);
+            std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(reorderedTriangles);
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
             
-            SendDataAsTextureBuffer(trianglesData, triangles.size(), "u_Triangles", 3);
-            SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 4);
+            SendDataAsTextureBuffer(trianglesVertexData, reorderedTriangles.size(), "u_Triangles", 3, GL_RGB32F);
+            SendDataAsTextureBuffer(trianglesMatIdxData, reorderedTriangles.size(), "u_MaterialsIndex", 4, GL_R32I);
+            SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 5, GL_RGB32F);
 
             SendMaterials(materials);
             
-            std::cout << "triangles count: " << triangles.size() << std::endl;
-            std::cout << "floats count: " << trianglesData.size() << std::endl;
+            std::cout << "triangles count: " << reorderedTriangles.size() << std::endl;
+            std::cout << "floats count: " << trianglesVertexData.size() << std::endl;
         }
 
-        void SendDataAsTextureBuffer(const std::vector<float>& data, const int count, const std::string& uniformName, const int textureUnit) {
+        template<typename T>
+        void SendDataAsTextureBuffer(const std::vector<T>& data, const int count, const std::string& uniformName, const int textureUnit, const unsigned int format) {
+            // Add error checking after each GL call
+            if (data.empty()) {
+                std::cerr << "Warning: Empty data vector for " << uniformName << std::endl;
+                return;
+            }
             // Create a buffer texture for triangle data
             GLuint bufferId;
             GLCALL(glGenBuffers(1, &bufferId));
             GLCALL(glBindBuffer(GL_TEXTURE_BUFFER, bufferId));
-            GLCALL(glBufferData(GL_TEXTURE_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW));
+            GLCALL(glBufferData(GL_TEXTURE_BUFFER, data.size() * sizeof(T), data.data(), GL_STATIC_DRAW));
 
             // Create the texture buffer object
             GLuint textureId;
             GLCALL(glGenTextures(1, &textureId));
             GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
-            GLCALL(glTexBuffer(GL_TEXTURE_BUFFER, GL_RGB32F, bufferId));
+            GLCALL(glTexBuffer(GL_TEXTURE_BUFFER, format, bufferId));
 
             // Bind to texture unit 3
             GLCALL(glActiveTexture(GL_TEXTURE0 + textureUnit));
             GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
 
-            glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit);  // '0' corresponds to GL_TEXTURE0
-            glUniform1ui(glGetUniformLocation(shaderProgramId, (uniformName + "Count").c_str()), count);
+            GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit));  // '0' corresponds to GL_TEXTURE0
+            GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, (uniformName + "Count").c_str()), count));
         }
 
         void SendMaterials(const std::vector<std::unique_ptr<Material::Material>>& materials) {
@@ -284,13 +304,13 @@ class Scene {
             auto position3Loc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position3"}});
             auto directionLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"direction"}});
             auto scaleLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"scale"}});
-            auto colourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"colour"}});
-            auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"specularColour"}});
-            auto roughnessLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"roughness"}});
-            auto metallicLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"metallic"}});
-            auto transparencyLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"transparency"}});
-            auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"refractionIndex"}});
-            auto isLightLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"isLight"}});
+            auto colourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"colour"}});
+            auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"specularColour"}});
+            auto roughnessLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"roughness"}});
+            auto metallicLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"metallic"}});
+            auto transparencyLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"transparency"}});
+            auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"refractionIndex"}});
+            auto isLightLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"isLight"}});
            
             glUniform1ui(typeLoc, shape.getType());
             glUniform3f(positionLoc, shape.getPosition().x, shape.getPosition().y, shape.getPosition().z);

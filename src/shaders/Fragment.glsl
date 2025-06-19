@@ -3,8 +3,7 @@
 out vec3 color;
 
 #define INF 1.0/0.0
-#define MAX_HITTABLE_COUNT 8
-#define MAX_OBJ_COUNT 256
+#define MAX_HITTABLE_COUNT 4
 #define SPHERE 0
 
 struct Material {
@@ -40,11 +39,10 @@ struct Triangle {
 struct BoundingBox {
     vec3 maxi;
     vec3 mini;
-    int leftChildIndex;
     int rightChildIndex;
     int triangleStartIndex;
     int triangleCount;
-}
+};
 
 struct Camera {
     vec3 position;
@@ -72,27 +70,17 @@ uniform vec3 u_RandSeed;
 uniform sampler2D u_Accumulation;
 uniform sampler2D u_RgbNoise;
 
-uniform samplerBuffer u_Triangles;
+uniform samplerBuffer u_Triangles; // rgb32f
+uniform samplerBuffer u_MaterialsIndex; // int
 uniform uint u_TrianglesCount;
 
-uniform samplerBuffer u_BoundingBoxes;
+uniform samplerBuffer u_BoundingBoxes; // rgb32f
 uniform uint u_BoundingBoxesCount;
 
 #define MAX_MATERIALS_COUNT 16
 uniform Material u_Materials[MAX_MATERIALS_COUNT];
 uniform uint u_MaterialsCount;
 
-
-struct Object { // represents a grouping of triangles
-    vec3 position;
-    float scale;
-    int trianglesStartIndex;
-    int trianglesCount;
-    Material material;
-};
-
-uniform int u_ObjectsCount;
-uniform Object u_Objects[MAX_OBJ_COUNT];
 // skybox
 uniform samplerCube skybox;
 
@@ -190,30 +178,25 @@ bool hitSphere(Sphere sphere, Ray r, inout HitRecord hitRecord) {
 
 Triangle getTriangle(int index) {
     Triangle triangle;
-    int bufferIndex = index*3;
-    triangle.position = texelFetch(u_Triangles, bufferIndex).xyz;
+    int bufferIndex = index * 3;
+    triangle.position = texelFetch(u_Triangles, bufferIndex + 0).xyz;
     triangle.position2 = texelFetch(u_Triangles, bufferIndex + 1).xyz;
     triangle.position3 = texelFetch(u_Triangles, bufferIndex + 2).xyz;
+    int matIdx = int(texelFetch(u_MaterialsIndex, index).x);
+    triangle.materialIndex = (matIdx >= 0 && matIdx < int(u_MaterialsCount)) ? matIdx : 0;
     return triangle;
 }
 
 BoundingBox getBoundingBox(int index) {
     BoundingBox box;
-    int bufferIndex = index * 10;
-    box.maxi = vec3(
-        texelFetch(u_BoundingBoxes, bufferIndex + 0).x,
-        texelFetch(u_BoundingBoxes, bufferIndex + 1).x,
-        texelFetch(u_BoundingBoxes, bufferIndex + 2).x
-    );
-    box.mini = vec3(
-        texelFetch(u_BoundingBoxes, bufferIndex + 3).x,
-        texelFetch(u_BoundingBoxes, bufferIndex + 4).x,
-        texelFetch(u_BoundingBoxes, bufferIndex + 5).x
-    );
-    box.leftChildIndex = int(texelFetch(u_BoundingBoxes, bufferIndex + 6).x);
-    box.rightChildIndex = int(texelFetch(u_BoundingBoxes, bufferIndex + 7).x);
-    box.triangleStartIndex = int(texelFetch(u_BoundingBoxes, bufferIndex + 8).x);
-    box.triangleCount = int(texelFetch(u_BoundingBoxes, bufferIndex + 9).x);
+    int bufferIndex = index * 3;
+    box.maxi = texelFetch(u_BoundingBoxes, bufferIndex + 0).xyz;
+    box.mini = texelFetch(u_BoundingBoxes, bufferIndex + 1).xyz;
+    vec3 otherFields = texelFetch(u_BoundingBoxes, bufferIndex + 2).xyz; 
+
+    box.rightChildIndex = int(otherFields.x);
+    box.triangleStartIndex = int(otherFields.y);
+    box.triangleCount = int(otherFields.z);
     return box;
 }
 
@@ -252,14 +235,27 @@ bool hitTriangle(inout Triangle triangle, Ray r, inout HitRecord hitrecord) {
     return true;
 }
 
-HitRecord BoundingBoxHit(BoundingBox)
+bool hitBoundingBox(Ray ray, BoundingBox aabb) {
+    vec3 invDir = 1.0 / ray.direction;
+    vec3 t0s = (aabb.mini - ray.origin) * invDir;
+    vec3 t1s = (aabb.maxi - ray.origin) * invDir;
 
+    vec3 tsmaller = min(t0s, t1s);
+    vec3 tbigger = max(t0s, t1s);
+
+    float tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
+    float tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
+
+    return tmax >= max(tmin, 0.0);
+}
 
 #define VISUALISE_CLUSTERS false
+#define MAX_STACK_SIZE 32
 
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
     hitRecord.hitAnything = false;
+
 
     for(uint i = 0; i < u_HittablesCount; ++i) {
         Hittable hittable = u_Hittable[i];
@@ -273,43 +269,38 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
         }
     }
 
-    // HitRecord boundingSphereHit;
-    // for(int j = 0; j < u_ObjectsCount; j++) {
-    //     if(hitSphere(Sphere(u_Objects[j].position, u_Objects[j].scale), ray, boundingSphereHit)) {
-    //         if(VISUALISE_CLUSTERS && hitRecord.t > boundingSphereHit.t) {
-    //             hitRecord = boundingSphereHit;
-    //             hitRecord.material = u_Objects[j].material;
-    //             hitRecord.hitAnything = true;
-    //         }
-    //     } else {
-    //         continue;
-    //     }
+    int stack[MAX_STACK_SIZE];
+    int stackptr = 0;
+    if(u_BoundingBoxesCount > 0)
+        stack[stackptr++] = 0;
+    int leafhitNum = 0;
+    while(stackptr > 0) {
+        int indexBB = stack[--stackptr];
         
-    //     if(VISUALISE_CLUSTERS) 
-    //         continue;
-
-    //     if(hitRecord.t < boundingSphereHit.t && boundingSphereHit.frontFace) {
-    //         continue;
-    //     }
-
-    // Material material = u_Objects[j].material;
-
-    // int trianglesIndexStart = u_Objects[j].trianglesStartIndex;
-    // int trianglesIndexEnd = trianglesIndexStart + u_Objects[j].trianglesCount;
-
-    // for(int i = trianglesIndexStart; i < trianglesIndexEnd; ++i) {
-    //     Triangle triangle = getTriangle(i);
-    //     HitRecord hitRecordTmp;
-    //     if(hitTriangle(triangle, ray, hitRecordTmp)) {
-    //         if(hitRecord.t > hitRecordTmp.t) {
-    //             hitRecord = hitRecordTmp;
-    //             hitRecord.material = material;
-    //             hitRecord.hitAnything = true;
-    //         }
-    //     }
-    // }
+        BoundingBox aabb = getBoundingBox(indexBB);
+        if(!hitBoundingBox(ray, aabb)) { 
+            continue;
+        }
+        HitRecord hitRecordTmp;
+        if(aabb.triangleCount > 0 && aabb.triangleStartIndex >= 0){ // is leaf
+            for(int i=aabb.triangleStartIndex; i<aabb.triangleStartIndex + aabb.triangleCount; ++i) {
+                Triangle triangle = getTriangle(i);
+                if(hitTriangle(triangle, ray, hitRecordTmp)) {
+                    if(hitRecord.t > hitRecordTmp.t) {
+                        hitRecord = hitRecordTmp;
+                        hitRecord.material = u_Materials[triangle.materialIndex];
+                        hitRecord.hitAnything = true;
+                    }
+                }
+            }
+        } else {
+            if(stackptr > MAX_STACK_SIZE - 2) {
+                continue;
+            }
+            stack[stackptr++] = aabb.rightChildIndex;
+            stack[stackptr++] = indexBB + 1;
+        }
     }
-
     return hitRecord.hitAnything;
 };
 

@@ -174,17 +174,10 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     LoadSkybox(shaderProgramId, skyBoxPath, 1);
 
     /** rng noise textures */
-    //LoadNoiseTexture(shaderProgramId, "./Textures/Noise/grayscaleNoise.png", "u_GrayNoise", 2);
     LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
 
     scene.LoadObjects({
-        //"./Objects/teapot1.txt",
-        "./Objects/teapot2.txt",
-        "./Objects/surface.txt"
-        // "./Objects/room.txt",
-       // "./Objects/cube_light_G.txt",
-        // "./Objects/cube_light_R.txt",
-        //"./Objects/cube_light_B.txt"
+        "./Objects/teapot1.txt"
     });
 
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
