@@ -223,23 +223,22 @@ class Scene {
             auto [boundingBoxes, reorderedTriangles] = bvhtree.BuildTree();
             triangles = reorderedTriangles;
             // Flatten all triangles into a single vector
-            std::vector<float> trianglesVertexData = FlattenTrianglesVertices(reorderedTriangles);
-            std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(reorderedTriangles);
+            std::vector<float> trianglesVertexData = FlattenTrianglesVertices(triangles);
+            std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(triangles);
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
             
-            for(const auto& f : reorderedTriangles) {
-                std::cout << f.pos1.x << ", " << f.pos1.y << ", " << f.pos1.z << " | "
-                          << f.pos2.x << ", " << f.pos2.y << ", " << f.pos2.z << " | "
-                          << f.pos3.x << ", " << f.pos3.y << ", " << f.pos3.z << std::endl;
-            }
-
-            SendDataAsTextureBuffer(trianglesVertexData, reorderedTriangles.size(), "u_Triangles", 3, GL_RGB32F);
-            SendDataAsTextureBuffer(trianglesMatIdxData, reorderedTriangles.size(), "u_MaterialsIndex", 4, GL_R32I);
+            // for(const auto& f : reorderedTriangles) {
+            //     std::cout << f.pos1.x << ", " << f.pos1.y << ", " << f.pos1.z << " | "
+            //               << f.pos2.x << ", " << f.pos2.y << ", " << f.pos2.z << " | "
+            //               << f.pos3.x << ", " << f.pos3.y << ", " << f.pos3.z << std::endl;
+            // }
+            SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", 3, GL_RGB32F);
+            SendDataAsTextureBuffer(trianglesMatIdxData, triangles.size(), "u_MaterialsIndex", 4, GL_R32I);
             SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 5, GL_RGB32F);
 
             SendSceneMaterials();
             
-            std::cout << "triangles count: " << reorderedTriangles.size() << std::endl;
+            std::cout << "triangles count: " << triangles.size() << std::endl;
             std::cout << "floats count: " << trianglesVertexData.size() << std::endl;
         }
 
@@ -249,6 +248,7 @@ class Scene {
                 std::cerr << "Warning: Empty data vector for " << uniformName << std::endl;
                 return;
             }
+            // create a new buffer and bind the texture buffer to
             GLuint bufferId;
             GLCALL(glGenBuffers(1, &bufferId));
             GLCALL(glBindBuffer(GL_TEXTURE_BUFFER, bufferId));
@@ -256,11 +256,9 @@ class Scene {
 
             GLuint textureId;
             GLCALL(glGenTextures(1, &textureId));
-            GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
+            GLCALL(glActiveTexture(GL_TEXTURE0 + textureUnit)); // make texture unit the active unit
+            GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId)); // associate the texture object with the buffer  
             GLCALL(glTexBuffer(GL_TEXTURE_BUFFER, format, bufferId));
-
-            GLCALL(glActiveTexture(GL_TEXTURE0 + textureUnit));
-            GLCALL(glBindTexture(GL_TEXTURE_BUFFER, textureId));
 
             GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit));
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, (uniformName + "Count").c_str()), count));

@@ -71,7 +71,7 @@ uniform sampler2D u_Accumulation;
 uniform sampler2D u_RgbNoise;
 
 uniform samplerBuffer u_Triangles; // rgb32f
-uniform samplerBuffer u_MaterialsIndex; // int
+uniform isamplerBuffer  u_MaterialsIndex; // int
 uniform uint u_TrianglesCount;
 
 uniform samplerBuffer u_BoundingBoxes; // rgb32f
@@ -182,8 +182,7 @@ Triangle getTriangle(int index) {
     triangle.position = texelFetch(u_Triangles, bufferIndex + 0).xyz;
     triangle.position2 = texelFetch(u_Triangles, bufferIndex + 1).xyz;
     triangle.position3 = texelFetch(u_Triangles, bufferIndex + 2).xyz;
-    int matIdx = int(texelFetch(u_MaterialsIndex, index).x);
-    triangle.materialIndex = (matIdx >= 0 && matIdx < int(u_MaterialsCount)) ? matIdx : 0;
+    triangle.materialIndex = texelFetch(u_MaterialsIndex, index).r;
     return triangle;
 }
 
@@ -250,7 +249,7 @@ bool hitBoundingBox(Ray ray, BoundingBox aabb) {
 }
 
 #define VISUALISE_CLUSTERS false
-#define MAX_STACK_SIZE 32
+#define MAX_STACK_SIZE 64
 
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
@@ -269,57 +268,39 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
         }
     }
 
-    HitRecord hitRecordTmp;
-    for(int i=0; i<u_TrianglesCount; ++i) {
-        Triangle triangle = getTriangle(i);
-        // if(triangle.position.x == 0.0)
-        //     return true;
+    int stack[MAX_STACK_SIZE];
+    int stackptr = 0;
+    if(u_BoundingBoxesCount > 0)
+        stack[stackptr++] = 0;
+    int leafhitNum = 0;
+    while(stackptr > 0) {
+        int indexBB = stack[--stackptr];
+        
+        BoundingBox aabb = getBoundingBox(indexBB);
+        if(!hitBoundingBox(ray, aabb)) { 
+            continue;
+        }
+        HitRecord hitRecordTmp;
+        if(aabb.triangleCount > 0 && aabb.triangleStartIndex >= 0){ // is leaf
+            for(int i=aabb.triangleStartIndex; i<aabb.triangleStartIndex + aabb.triangleCount; ++i) {
+                Triangle triangle = getTriangle(i);
 
-        if(hitTriangle(triangle, ray, hitRecordTmp)) {
-            if(hitRecord.t > hitRecordTmp.t) {
-                hitRecord = hitRecordTmp;
-                hitRecord.material = u_Materials[triangle.materialIndex];
-                hitRecord.hitAnything = true;
+                if(hitTriangle(triangle, ray, hitRecordTmp)) {
+                    if(hitRecord.t > hitRecordTmp.t) {
+                        hitRecord = hitRecordTmp;
+                        hitRecord.material = u_Materials[triangle.materialIndex];
+                        hitRecord.hitAnything = true;  
+                    }
+                }
             }
+        } else {
+            if(stackptr > MAX_STACK_SIZE - 2) {
+                continue;
+            }
+            stack[stackptr++] = aabb.rightChildIndex;
+            stack[stackptr++] = indexBB + 1;
         }
     }
-
-
-    // int stack[MAX_STACK_SIZE];
-    // int stackptr = 0;
-    // if(u_BoundingBoxesCount > 0)
-    //     stack[stackptr++] = 0;
-    // int leafhitNum = 0;
-    // while(stackptr > 0) {
-    //     int indexBB = stack[--stackptr];
-        
-    //     BoundingBox aabb = getBoundingBox(indexBB);
-    //     if(!hitBoundingBox(ray, aabb)) { 
-    //         continue;
-    //     }
-    //     HitRecord hitRecordTmp;
-    //     if(aabb.triangleCount > 0 && aabb.triangleStartIndex >= 0){ // is leaf
-    //         for(int i=aabb.triangleStartIndex; i<aabb.triangleStartIndex + aabb.triangleCount; ++i) {
-    //             Triangle triangle = getTriangle(i);
-    //             if(triangle.materialIndex == 0)
-    //                 return true;
-
-    //             if(hitTriangle(triangle, ray, hitRecordTmp)) {
-    //                 if(hitRecord.t > hitRecordTmp.t) {
-    //                     hitRecord = hitRecordTmp;
-    //                     hitRecord.material = u_Materials[triangle.materialIndex];
-    //                     hitRecord.hitAnything = true;
-    //                 }
-    //             }
-    //         }
-    //     } else {
-    //         if(stackptr > MAX_STACK_SIZE - 2) {
-    //             continue;
-    //         }
-    //         stack[stackptr++] = aabb.rightChildIndex;
-    //         stack[stackptr++] = indexBB + 1;
-    //     }
-    // }
     return hitRecord.hitAnything;
 };
 
@@ -336,7 +317,7 @@ vec3 TransparentScatter(inout HitRecord hitRecord, inout Material material, inou
     return reflect(ray.direction, hitRecord.normal);
 }
 #define FOG_DENSITY 0.00
-#define FOG_HEIGHT 12.0
+#define FOG_HEIGHT 24.0
  
 bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colour, vec2 seed, const float maxFogTravel) {
     // find out if ray will across the fod boundary

@@ -27,6 +27,7 @@ public:
     bool IsLeaf() const { return triangleCount > 0; }
 };
 
+#define DEFAULT_LEAF_TRIANGLES 2
 /**
  * bounding volume heirachy tree that takes in a list of vectors belonging to some object and outputs the 
  */
@@ -83,7 +84,7 @@ private:
         newBox.mini = miniBounds - Vector3f(0.001, 0.001, 0.001);
         newBox.maxi = maxiBounds + Vector3f(0.001, 0.001, 0.001);
 
-        std::cout << "processing [" << l << ", " << r << ") with " << (r - l) << " triangles" << std::endl;
+        // std::cout << "processing [" << l << ", " << r << ") with " << (r - l) << " triangles" << std::endl;
         boundingBoxes.push_back(newBox); // add to bounding boxes container and get the index
         int myIndex = boundingBoxes.size() - 1;
         
@@ -109,7 +110,7 @@ private:
 
             // Prevent degenerate splits that could cause infinite recursion
             if (midIdx == l || midIdx == r) {
-                std::cout << "Warning: degenerate partition detected. All centroids on one side of split." << std::endl;
+                // std::cout << "Warning: degenerate partition detected. All centroids on one side of split." << std::endl;
                 // Sort triangles by centroid along the chosen dimension
                 std::sort(lIter, rIter, [&](const Tri& a, const Tri& b) {
                     Vector3f centroidA = a.Centroid();
@@ -121,14 +122,14 @@ private:
                 
                 // Split in the middle of the sorted range
                 midIdx = l + (r - l) / 2;
-                std::cout << "Sorted split: left=[" << l << "," << midIdx << "), right=[" << midIdx << "," << r << ")" << std::endl;
+                // std::cout << "Sorted split: left=[" << l << "," << midIdx << "), right=[" << midIdx << "," << r << ")" << std::endl;
             }
 
             MakeBox(l, midIdx); // left child index is myindex + 1
             boundingBoxes[myIndex].rightChildIndex = MakeBox(midIdx, r);
         } else {
             // Leaf node - can contain multiple triangles
-            std::cout << "Creating leaf node with " << (r - l) << " triangles at indices [" << l << ", " << r << ")" << std::endl;
+            // std::cout << "Creating leaf node with " << (r - l) << " triangles at indices [" << l << ", " << r << ")" << std::endl;
             boundingBoxes[myIndex].triangleStartIndex = l;
             boundingBoxes[myIndex].triangleCount = r - l;
         }
@@ -136,8 +137,8 @@ private:
     };
 
 public:
-    BvhTree() : maxTrianglesPerLeaf(8) {}
-    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf = 8) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
+    BvhTree() : maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES) {}
+    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
 
     void SetTriangles(std::vector<Tri> newTriangles) {
         this->triangles = std::move(newTriangles); // Fixed: assign to member variable

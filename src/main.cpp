@@ -45,7 +45,7 @@ static Scene CreateScene(unsigned int shaderProgramId)
     // scene.AddShape(std::make_unique<Sphere>(Vector3f{-3.0, -3.0, 2.0}, 2.0, Material::Transparent{{1.0f, 1.0f, 1.0f}, 0.9, 1.33}));
     // scene.AddShape(Sphere(Vector3f{0.0, 30.0, 160.0}, 80.0, Material::LightSource{{1.0f, 1.0f, 1.0f}}));
     // Bright Lambertian for ambient lighting effect
-    scene.AddShape(Sphere(Vector3f{100.0, 600.0, 1200.0}, 800, Material::LightSource{{1.0, 1.0, 1.0}}));
+    scene.AddShape(Sphere(Vector3f{60.0, 60.0, 120.0}, 80, Material::LightSource{{1.0, 1.0, 1.0}}));
     // scene.AddShape(std::make_unique<Sphere>(Vector3f{-120.0, 2000.0, 2000.0}, 1000, Material::LightSource{{1.0, 1.0, 1.0}}));
 
     auto screenResolutionUniformLocation = glGetUniformLocation(shaderProgramId, "screenResolution");
@@ -155,7 +155,8 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
 
     // Color texture to accumulate
     unsigned int colorBufferTex;
-    GLCALL(glGenTextures(1, &colorBufferTex));                                                                   // create a colour buffer texture
+    GLCALL(glGenTextures(1, &colorBufferTex));  
+    GLCALL(glActiveTexture(GL_TEXTURE0));                                                                 // create a colour buffer texture
     GLCALL(glBindTexture(GL_TEXTURE_2D, colorBufferTex));                                                        // bind the colour buffer texture to GL_TEXTURE_2D
     GLCALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL)); // define the currently bound colour buffer texture
     int accumLocation = glGetUniformLocation(shaderProgramId, "u_Accumulation");
@@ -164,9 +165,6 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
     GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBufferTex, 0)); // attach the texture to the framebuffer
-
-    GLCALL(glActiveTexture(GL_TEXTURE0));
-    GLCALL(glBindTexture(GL_TEXTURE_2D, colorBufferTex));
 
     Scene scene = CreateScene(shaderProgramId);
 
@@ -177,7 +175,11 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
 
     scene.LoadObjects({
-        "./Objects/teapot1.txt"
+        "./Objects/teapot3.txt",
+        "./Objects/surface.txt",
+        "./Objects/cube_light_R.txt",
+        "./Objects/cube_light_G.txt",
+        "./Objects/cube_light_B.txt"
     });
 
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
