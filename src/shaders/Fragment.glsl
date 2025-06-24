@@ -2,8 +2,14 @@
 
 out vec3 color;
 
+#define RAY_COUNT 3
+#define FOG_DENSITY 0.0
+#define FOG_HEIGHT 128.0
+#define AIR_REFRACT 1.0003
+#define MAX_STACK_SIZE 64
 #define INF 1.0/0.0
 #define MAX_HITTABLE_COUNT 4
+#define MAX_MATERIALS_COUNT 16
 #define SPHERE 0
 
 struct Material {
@@ -39,9 +45,9 @@ struct Triangle {
 struct BoundingBox {
     vec3 maxi;
     vec3 mini;
-    int rightChildIndex;
-    int triangleStartIndex;
     int triangleCount;
+    int triangleStartIndex;
+    int rightChildIndex;
 };
 
 struct Camera {
@@ -74,10 +80,9 @@ uniform samplerBuffer u_Triangles; // rgb32f
 uniform isamplerBuffer  u_MaterialsIndex; // int
 uniform uint u_TrianglesCount;
 
-uniform samplerBuffer u_BoundingBoxes; // rgb32f
+uniform samplerBuffer u_BoundingBoxes; // r32f
 uniform uint u_BoundingBoxesCount;
 
-#define MAX_MATERIALS_COUNT 16
 uniform Material u_Materials[MAX_MATERIALS_COUNT];
 uniform uint u_MaterialsCount;
 
@@ -105,6 +110,7 @@ struct HitRecord {
     float t;
     bool frontFace;
     bool hitAnything;
+    int materialIndex;
     Material material;
 };
 
@@ -173,6 +179,7 @@ bool hitSphere(Sphere sphere, Ray r, inout HitRecord hitRecord) {
     hitRecord.hitPoint = RayAt(r, hitRecord.t);
     vec3 outwardNormal = (hitRecord.hitPoint - center) / radius;
     SetFaceNormal(hitRecord, r, outwardNormal);
+    hitRecord.materialIndex = -1;
     return true;
 };
 
@@ -231,10 +238,11 @@ bool hitTriangle(inout Triangle triangle, Ray r, inout HitRecord hitrecord) {
     hitrecord.hitPoint = RayAt(r, t);
     vec3 normal = normalize(cross(e1, e2));
     SetFaceNormal(hitrecord, r, normal);
+    hitrecord.materialIndex = triangle.materialIndex;
     return true;
 }
 
-bool hitBoundingBox(Ray ray, BoundingBox aabb) {
+bool hitBoundingBox(Ray ray, BoundingBox aabb, inout HitRecord hitRecord) {
     vec3 invDir = 1.0 / ray.direction;
     vec3 t0s = (aabb.mini - ray.origin) * invDir;
     vec3 t1s = (aabb.maxi - ray.origin) * invDir;
@@ -245,16 +253,17 @@ bool hitBoundingBox(Ray ray, BoundingBox aabb) {
     float tmin = max(max(tsmaller.x, tsmaller.y), tsmaller.z);
     float tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
 
-    return tmax >= max(tmin, 0.0);
-}
+    hitRecord.hitAnything = bool(tmax >= max(tmin, 0.0));
+    hitRecord.frontFace = true;
+    hitRecord.t = tmin;
 
-#define VISUALISE_CLUSTERS false
-#define MAX_STACK_SIZE 64
+    return hitRecord.hitAnything;
+}
 
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
     hitRecord.hitAnything = false;
-
+    hitRecord.materialIndex = -1;
 
     for(uint i = 0; i < u_HittablesCount; ++i) {
         Hittable hittable = u_Hittable[i];
@@ -275,16 +284,15 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     int leafhitNum = 0;
     while(stackptr > 0) {
         int indexBB = stack[--stackptr];
-        
+
         BoundingBox aabb = getBoundingBox(indexBB);
-        if(!hitBoundingBox(ray, aabb)) { 
+        HitRecord hitRecordTmp;
+        if(!hitBoundingBox(ray, aabb, hitRecordTmp) || hitRecordTmp.t > hitRecord.t) { 
             continue;
         }
-        HitRecord hitRecordTmp;
         if(aabb.triangleCount > 0 && aabb.triangleStartIndex >= 0){ // is leaf
             for(int i=aabb.triangleStartIndex; i<aabb.triangleStartIndex + aabb.triangleCount; ++i) {
                 Triangle triangle = getTriangle(i);
-
                 if(hitTriangle(triangle, ray, hitRecordTmp)) {
                     if(hitRecord.t > hitRecordTmp.t) {
                         hitRecord = hitRecordTmp;
@@ -297,15 +305,24 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
             if(stackptr > MAX_STACK_SIZE - 2) {
                 continue;
             }
-            stack[stackptr++] = aabb.rightChildIndex;
-            stack[stackptr++] = indexBB + 1;
+            // push the closer child on first
+            BoundingBox leftBox = getBoundingBox(indexBB + 1);
+            BoundingBox rightBox = getBoundingBox(aabb.rightChildIndex);
+            HitRecord hitLeftRecord;
+            HitRecord hitRightRecord;
+            hitBoundingBox(ray, leftBox, hitLeftRecord);
+            hitBoundingBox(ray, rightBox, hitRightRecord);
+            if(hitLeftRecord.t < hitRightRecord.t) {
+                if(hitRightRecord.t < hitRecord.t) stack[stackptr++] = aabb.rightChildIndex;
+                if(hitLeftRecord.t < hitRecord.t) stack[stackptr++] = indexBB + 1;
+            } else {
+                if(hitLeftRecord.t < hitRecord.t) stack[stackptr++] = indexBB + 1;
+                if(hitRightRecord.t < hitRecord.t) stack[stackptr++] = aabb.rightChildIndex;
+            }
         }
     }
     return hitRecord.hitAnything;
 };
-
-
-#define AIR_REFRACT 1.0003
 
 vec3 TransparentScatter(inout HitRecord hitRecord, inout Material material, inout Ray ray) {
     float ri = hitRecord.frontFace ? AIR_REFRACT/material.refractionIndex : material.refractionIndex/AIR_REFRACT;
@@ -316,9 +333,7 @@ vec3 TransparentScatter(inout HitRecord hitRecord, inout Material material, inou
         return refract(ray.direction, hitRecord.normal, ri);
     return reflect(ray.direction, hitRecord.normal);
 }
-#define FOG_DENSITY 0.00
-#define FOG_HEIGHT 24.0
- 
+
 bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colour, vec2 seed, const float maxFogTravel) {
     // find out if ray will across the fod boundary
     float scatterProbability = 0.0;
@@ -344,61 +359,55 @@ bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colo
     if (fogScope.magnitude > 0.0 && fogScope.magnitude <= hitRecord.t) {
         // probability of scattering is proportional to the distance traveled in fog
         scatterProbability = FOG_DENSITY * fogScope.magnitude;
-        scattered = texture(u_RgbNoise, seed+vec2(0.012)).x < scatterProbability;
+        scattered = texture(u_RgbNoise, seed+vec2(0.02)).x < scatterProbability;
         if(scattered) {
             vec3 newDirection;
             if(hitsLight) 
-                newDirection = normalize(ray.direction + texture(u_RgbNoise, seed+vec2(-0.01, 0.034)).rgb * 2 - 1);
+                newDirection = normalize((1/hitRecord.t)*ray.direction + texture(u_RgbNoise, seed+vec2(-0.0123, 0.03443)).rgb * 2 - 1);
             else
                 newDirection = normalize(texture(u_RgbNoise, seed-vec2(0.054)).rgb * 2 - 1);
-            ray = MakeRay(fogScope.origin + ray.direction * fogScope.magnitude * texture(u_RgbNoise, seed-vec2(0.01, 0.05)).x, newDirection, 1);
+            ray = MakeRay(fogScope.origin + ray.direction * fogScope.magnitude * texture(u_RgbNoise, seed-vec2(0.0133, 0.0552)).x, newDirection, 1);
             colour *= (1 - FOG_DENSITY);
         }
     }
     return scattered;
 }
 
-vec3 RayColour(Ray ray) {
+vec3 RayColour(Ray ray, int iRayCount) {
     HitRecord hitRecord;
     vec3 rayColour = vec3(1.0);
     const float maxFogTravel = 1.0/FOG_DENSITY;
-
     for(int i=0; i<u_BounceLimit; ++i) {
         bool hitAnything = HitHittableList(ray, hitRecord);
 
-        if (VISUALISE_CLUSTERS || u_BounceLimit == 1) {
+        if (u_BounceLimit == 1) {
             return vec3(abs(hitRecord.normal));
-        } 
+        }
 
         vec2 seed = mod(vec2(
-            Hashf(ray.origin.x + ray.direction.y) + Hash(i) + Hash(u_FrameIndex) + Hashf(u_RandSeed.x * u_BounceLimit),
-            Hashf(ray.origin.y + ray.direction.z) + Hash(i+120) + Hashf(u_RandSeed.y * u_BounceLimit)
+            Hashf(ray.origin.x + ray.direction.y) + Hash(i) + Hash(iRayCount) + Hash(u_FrameIndex) + Hashf(u_RandSeed.x * u_BounceLimit),
+            Hashf(ray.origin.y + ray.direction.z) + Hash(i+120) + Hash(iRayCount) + Hashf(u_RandSeed.y * u_BounceLimit)
         ), vec2(100, 100))/ 100;
         
-        // handle volumetric scattering
         if (VolumetricScatter(hitRecord, ray, rayColour, seed-vec2(0.31), maxFogTravel)) {
            continue;
         }
-
         if(!hitAnything) {
             vec3 skybox_texture = texture(skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
             return rayColour*skybox_texture;
         } 
-
         Material material = hitRecord.material;
-
         if (material.isLight) {
             return rayColour * material.colour;
         }
-
         vec3 nextDirection;
-        if(texture(u_RgbNoise, seed+vec2(0.21, 0.1)).x < material.transparency) {
+        if(texture(u_RgbNoise, seed+vec2(0.01534, 0.183)).x < material.transparency) {
             nextDirection = TransparentScatter(hitRecord, material, ray);
         } else {
-            vec3 diffuseDir = normalize(hitRecord.normal + (2*texture(u_RgbNoise, seed-vec2(0.02, 0.3)).xyz-1)*material.roughness);
+            vec3 diffuseDir = normalize(hitRecord.normal + (2*texture(u_RgbNoise, seed-vec2(0.062, 0.0345)).xyz-1)*material.roughness);
             vec3 specularDir = reflect(ray.direction, hitRecord.normal);
 
-            bool isSpecular = texture(u_RgbNoise, seed+vec2(0.03, 0.01)).y < (1-material.roughness);
+            bool isSpecular = texture(u_RgbNoise, seed).y < (1-material.roughness);
 
             specularDir = mix(specularDir, diffuseDir, material.roughness);
 
@@ -407,18 +416,25 @@ vec3 RayColour(Ray ray) {
         }
         ray = Ray(hitRecord.hitPoint + 1e-4 * nextDirection, nextDirection, 1);
     }
-    return vec3(0.1);
+    return vec3(0.0);
 }
-
-
 void main()
 {
-    vec2 randOffset = texture(u_RgbNoise, u_RandSeed.xy).xy;
-    Ray initialRay = Ray(u_Camera.position, directionToViewport(randOffset), 1.0);
-    vec3 rgb = RayColour(initialRay);
-
+    vec3 rgb = vec3(0.0);
     vec2 uv = gl_FragCoord.xy / screenResolution;
     vec3 previous = texture(u_Accumulation, uv).rgb;
+    vec3 previousl = texture(u_Accumulation, uv + vec2(-1, 0)/screenResolution).rgb;
+    vec3 previousr = texture(u_Accumulation, uv + vec2(1, 0)/screenResolution).rgb;
+    vec3 previousu = texture(u_Accumulation, uv + vec2(0, 1)/screenResolution).rgb;
+    vec3 previousd = texture(u_Accumulation, uv + vec2(0, -1)/screenResolution).rgb;
+    int rayContributions = RAY_COUNT;
+    for(int i=0; i<RAY_COUNT; ++i)
+    { 
+        vec2 randOffset = texture(u_RgbNoise, u_RandSeed.yz + vec2(0.007*i)).xy;
+        Ray initialRay = Ray(u_Camera.position, directionToViewport(randOffset), 1.0);
+        rgb += RayColour(initialRay, i);
+    }
+    rgb = rgb/rayContributions;
 
     color = mix(previous, rgb, 1.0 / float(u_FrameIndex + 1));
 }

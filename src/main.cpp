@@ -19,8 +19,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define SCREEN_WIDTH 1080
-#define SCREEN_HEIGHT 720
+#define SCREEN_WIDTH 1600
+#define SCREEN_HEIGHT 900
 
 /* keys state array */
 bool keys[1024] = {false};
@@ -28,26 +28,7 @@ bool keys[1024] = {false};
 static Scene CreateScene(unsigned int shaderProgramId)
 {
     Scene scene(shaderProgramId);
-
     scene.SetCamera({{-8.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 120.0f});
-
-    // Ground plane
-    // scene.AddShape(std::make_unique<Sphere>(Vector3f{0.0, 0.0, -1000.0}, 1000.0, Material::Lambertian{{0.5, 0.5, 0.5}}));
-
-    // for (int i = 0; i <= 3; ++i)
-    // {
-    //     for (int j = 0; j <= 3; ++j)
-    //     {
-    //         scene.AddShape(std::make_unique<Sphere>(Vector3f{i * 3.0, j * 3.0, 1.0}, 1.0, Material::Metallic({1.0, 0.0f, 0.0}, i * 0.3, j * 0.3)));
-    //     }
-    // }
-
-    // scene.AddShape(std::make_unique<Sphere>(Vector3f{-3.0, -3.0, 2.0}, 2.0, Material::Transparent{{1.0f, 1.0f, 1.0f}, 0.9, 1.33}));
-    // scene.AddShape(Sphere(Vector3f{0.0, 30.0, 160.0}, 80.0, Material::LightSource{{1.0f, 1.0f, 1.0f}}));
-    // Bright Lambertian for ambient lighting effect
-    scene.AddShape(Sphere(Vector3f{60.0, 60.0, 120.0}, 80, Material::LightSource{{1.0, 1.0, 1.0}}));
-    // scene.AddShape(std::make_unique<Sphere>(Vector3f{-120.0, 2000.0, 2000.0}, 1000, Material::LightSource{{1.0, 1.0, 1.0}}));
-
     auto screenResolutionUniformLocation = glGetUniformLocation(shaderProgramId, "screenResolution");
     glUniform2f(screenResolutionUniformLocation, SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -127,7 +108,8 @@ static void LoadNoiseTexture(unsigned int shaderProgramId, std::string noiseText
 static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window,
                         const std::string &vertexShaderPath,
                         const std::string &fragmentShaderPath,
-                        const std::string &skyBoxPath)
+                        const std::string &skyBoxPath,
+                        const std::vector<std::string>& objectPaths)
 {
     ShaderProgramSource source = ParseShader(vertexShaderPath, fragmentShaderPath);
     unsigned int shaderProgramId = CreateShaderProgram(source.VertexSource, source.FragmentSource);
@@ -172,29 +154,39 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     LoadSkybox(shaderProgramId, skyBoxPath, 1);
 
     /** rng noise textures */
-    LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
+    LoadNoiseTexture(shaderProgramId, "./RayTracer/Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
 
-    scene.LoadObjects({
-        "./Objects/teapot3.txt",
-        "./Objects/surface.txt",
-        "./Objects/cube_light_R.txt",
-        "./Objects/cube_light_G.txt",
-        "./Objects/cube_light_B.txt"
-    });
+    scene.LoadObjects(objectPaths);
 
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
-    auto timePoint = std::chrono::steady_clock::now();
+    auto lastFpsCheck = std::chrono::steady_clock::now();
+    auto lastPollEvents = std::chrono::steady_clock::now();
     uint32_t secFrameCount = 0;
+    uint32_t fps = 0;
     while (!glfwWindowShouldClose(window.get()))
     {
-        glfwPollEvents();
-        bool cameraMoved = scene.HandleCameraMovement(keys);
-        if (cameraMoved)
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFpsCheck).count() > 1000)
         {
-            scene.ResetFrameIndex();
-            GLCALL(glClear(GL_COLOR_BUFFER_BIT));
+            lastFpsCheck = now;
+            fps = secFrameCount;
+            Vector3f cameraPosition = scene.GetCameraPosition();
+            std::cout << "fps: " << fps << ", total_frames: " << scene.GetFrameIndex();
+            std::cout << ",\t camera position: " << cameraPosition.x << " " << cameraPosition.y << " " << cameraPosition.z << std::endl;
+            secFrameCount = 0;
         }
-
+        if(std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPollEvents).count() > 10)
+        {
+            lastPollEvents = now;
+            glfwPollEvents();
+            scene.SetCurrentFps(fps);
+            bool cameraMoved = scene.HandleCameraMovement(keys);
+            if (cameraMoved)
+            {
+                scene.ResetFrameIndex();
+                GLCALL(glClear(GL_COLOR_BUFFER_BIT));
+            }
+        }
         scene.Finalise();
         // Render raytrace to framebuffer
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
@@ -204,14 +196,6 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
 
         glfwSwapBuffers(window.get());
         secFrameCount++;
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - timePoint).count() > 1000)
-        {
-            timePoint = now;
-            uint32_t fps = secFrameCount;
-            std::cout << "fps: " << fps << ", total_frames: " << scene.GetFrameIndex() << std::endl;
-            secFrameCount = 0;
-        }
     }
     GLCALL(glDeleteProgram(shaderProgramId));
     glDisableVertexAttribArray(0);
@@ -237,14 +221,18 @@ static void key_callback(GLFWwindow *window, const int key, const int, const int
 
 int main(int argc, char **argv)
 {
-    if (argc != 4)
+    if (argc < 4)
     {
-        std::cerr << "Usage: " << argv[0] << " <absolute_path_prefix> <rel_vertex_shader_path> <rel_fragment_shader_path> <rel_skybox_path>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <absolute_path_prefix> <rel_vertex_shader_path> <rel_fragment_shader_path> <rel_skybox_path> [<object_path_1>]" << std::endl;
         return EXIT_FAILURE;
     }
     std::string vertexShaderPath = argv[1];
     std::string fragmentShaderPath = argv[2];
     std::string skyboxPath = argv[3];
+    std::vector<std::string> objectPaths;
+    for(int i=4; i < argc; ++i) {
+        objectPaths.push_back(argv[i]);
+    }
 
     glfwSetErrorCallback(error_callback);
     if (!glfwInit())
@@ -276,7 +264,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    RenderScene(std::move(window), vertexShaderPath, fragmentShaderPath, skyboxPath);
+    RenderScene(std::move(window), vertexShaderPath, fragmentShaderPath, skyboxPath, objectPaths);
 
     return 0;
 }

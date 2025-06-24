@@ -104,6 +104,14 @@ struct Vector3f {
         );
     };
 
+    float& operator[](int index) {
+        if(index == 0) return x;
+        if(index == 1) return y;
+        if(index == 2) return z;
+        std::cout << "illegal access of Vector3f at index " << index << std::endl;
+        std::abort();
+    }
+
     float len() const {
         return sqrt(x*x + y*y + z*z);
     }

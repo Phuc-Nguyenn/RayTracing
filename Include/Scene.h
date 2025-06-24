@@ -11,6 +11,7 @@
 #include <cfloat>
 #include <limits.h>
 #include "BvhTree.h"
+#include "ObjectLoader.h"
 
 #define VIEWPORT_DISTANCE 1.0
 
@@ -56,92 +57,13 @@ class Scene {
 
         std::vector<Tri> triangles;
         std::vector<std::unique_ptr<Material::Material>> materials;
-
-        bool ReadInObjectFile(const std::string verticesFilePath) {
-            std::fstream vtxStream(verticesFilePath);
-            if (!vtxStream.is_open()) {
-                std::cerr << "Failed to open file: " << verticesFilePath << std::endl;
-                return false;
-            }
-            //read in position 
-            Vector3f centrePosition = Vector3f(0, 0, 0);
-            // should read in material from object file
-            std::unique_ptr<Material::Material> material;
-            std::string materialType;
-            std::string firstArg;
-            vtxStream >> firstArg;
-
-            if(firstArg == "position") {
-                if(!(vtxStream >> centrePosition.x >> centrePosition.z >> centrePosition.y)) {
-                    std::cout << "position argument specified but unable to extract position in " << verticesFilePath << std::endl;
-                }
-                // Now read the material type after position
-                if (!(vtxStream >> materialType)) {
-                    std::cout << "unable to read material type after position in " << verticesFilePath << std::endl;
-                    return false;
-                }
-            } else {
-                materialType = firstArg;
-            }
-            bool status = true;
-
-            if(materialType == "default-material") {
-                material = std::make_unique<Material::Lambertian>(Vector3f{0.75, 0.75, 0.75});
-            } else {
-                Vector3f color;
-                if (!(vtxStream >> color.x >> color.y >> color.z)) {
-                    std::cout << "unable to read material color in " << verticesFilePath << std::endl;
-                    return false;
-                }
-                if(materialType == "specular") {
-                    float roughness;
-                    status = bool(vtxStream >> roughness);
-                    if(status) material = std::make_unique<Material::Specular>(color, roughness); 
-                } else if(materialType == "lambertian") {
-                    if(status) material = std::make_unique<Material::Lambertian>(color);
-                } else if(materialType == "metallic") {
-                    float roughness, metallic;
-                    status = bool(vtxStream >> roughness >> metallic);
-                    if(status) material = std::make_unique<Material::Metallic>(color, roughness, metallic);
-                } else if(materialType == "transparent") {
-                    float transparency, refractionIndex;
-                    status = bool(vtxStream >> transparency >> refractionIndex);
-                    if(status) material = std::make_unique<Material::Transparent>(color, transparency, refractionIndex);
-                } else if(materialType == "lightsource") {
-                    if(status) material = std::make_unique<Material::LightSource>(color);
-                } else {
-                    std::cout << "unknown material type: " << materialType << std::endl;
-                    return false;
-                }
-            }
-            if(!status) {
-                std::cout << "unable to read material format" << std::endl;
-                return false;
-            }
-            materials.push_back(std::move(material));
-            
-            Vector3f x1;
-            Vector3f x2;
-            Vector3f x3;
-            int n;
-            vtxStream >> n;
-            for(int i=0; i<n; ++i) {
-                if(vtxStream >> x1.x >> x1.z >> x1.y >> x2.x >> x2.z >> x2.y >> x3.x >> x3.z >> x3.y) {
-                    x1 = x1 + centrePosition; 
-                    x2 = x2 + centrePosition; 
-                    x3 = x3 + centrePosition;
-                    triangles.push_back(Tri(x1, x2, x3, materials.size() - 1));
-                } else {
-                    std::cout << "failed to read " << verticesFilePath << " on vertex " << i + 1 << std::endl;
-                    return false;
-                }
-            }
-            return true;
-        };
+        bool inFpsTest;
+        float fpsTestAngle;
+        uint32_t currentfps;
 
     public:
         
-        Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), shapesIndex(0), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0), objectsIndex(0) {
+        Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), shapesIndex(0), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0), objectsIndex(0), inFpsTest(false), fpsTestAngle(0) {
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, "u_BounceLimit"), 4));
         }
 
@@ -164,6 +86,10 @@ class Scene {
             frameIndex = 0;
         }
 
+        void SetCurrentFps(uint32_t fps) {
+            currentfps = fps;
+        }
+        
         std::vector<int> FlattenTrianglesMatIdx(const std::vector<Tri>& reorderedTris) {
             std::vector<int> flattened;
             flattened.reserve(reorderedTris.size());
@@ -213,29 +139,44 @@ class Scene {
 
         void LoadObjects(const std::vector<std::string>& objectFilePaths) {
             int numberOfFiles = objectFilePaths.size();
+            std::unique_ptr<ObjectLoader> objectLoader;
             for(int i=0; i<numberOfFiles; ++i) {
-                if(ReadInObjectFile(objectFilePaths[i])) {
-                    std::cout << "successfully read in object from: " << objectFilePaths[i] << std::endl;
+                if(objectFilePaths[i].find(".off") != std::string::npos || objectFilePaths[i].find(".OFF") != std::string::npos) {
+                    objectLoader = std::make_unique<OFFLoader>();
+                } else {
+                    objectLoader = std::make_unique<ObjectLoader>();
                 }
+
+                if(!objectLoader->TargetFile(objectFilePaths[i])) {
+                    std::cout << "unable to read from: " << objectFilePaths[i] << std::endl;
+                    continue;
+                }
+                std::optional<Material::Material> material = objectLoader->ExtractMaterial();
+                if(!material.has_value()) {
+                    std::cout << "unable to read material from: " << objectFilePaths[i] << std::endl;
+                    continue;
+                }
+                materials.push_back(std::make_unique<Material::Material>(material.value()));
+                std::optional<std::vector<Tri>> objTris = objectLoader->ExtractTriangles();
+                if(!objTris.has_value()) {
+                    std::cout << "unable to read triangles from: " << objectFilePaths[i] << std::endl;
+                    continue;
+                }
+                triangles.insert(triangles.end(), objTris.value().begin(), objTris.value().end());
             }
+
             // create the Bvh tree
             BvhTree bvhtree(triangles);
             auto [boundingBoxes, reorderedTriangles] = bvhtree.BuildTree();
             triangles = reorderedTriangles;
+            std::cout << "constructed BVH tree with max depth of: " << bvhtree.GetDepth() << std::endl;
             // Flatten all triangles into a single vector
             std::vector<float> trianglesVertexData = FlattenTrianglesVertices(triangles);
             std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(triangles);
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
-            
-            // for(const auto& f : reorderedTriangles) {
-            //     std::cout << f.pos1.x << ", " << f.pos1.y << ", " << f.pos1.z << " | "
-            //               << f.pos2.x << ", " << f.pos2.y << ", " << f.pos2.z << " | "
-            //               << f.pos3.x << ", " << f.pos3.y << ", " << f.pos3.z << std::endl;
-            // }
             SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", 3, GL_RGB32F);
             SendDataAsTextureBuffer(trianglesMatIdxData, triangles.size(), "u_MaterialsIndex", 4, GL_R32I);
             SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 5, GL_RGB32F);
-
             SendSceneMaterials();
             
             std::cout << "triangles count: " << triangles.size() << std::endl;
@@ -287,7 +228,6 @@ class Scene {
         }
 
         void AddShape(const Shape& shape) {
-
             auto typeLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"type"}});
             auto positionLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position"}});
             auto position2Loc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position2"}});
@@ -366,6 +306,10 @@ class Scene {
             }
         }
 
+        Vector3f GetCameraPosition() {
+            return camera.position;
+        }
+
         void RotateCameraFacing(unsigned int direction, float rotationSpeed = 0.02f) {  
             Vector3f right = camera.facing.Cross({0.0f, 0.0f, 1.0f}).Normalize();  // Right axis
                                                   // Global up axis
@@ -385,6 +329,7 @@ class Scene {
             camera.facing = camera.facing.Normalize(); // Always re-normalize
         }
 
+        std::fstream fpsTestOut; 
         bool HandleCameraMovement(bool keys[]) {
             
             bool refreshStillCamera = false;
@@ -398,6 +343,30 @@ class Scene {
             Vector3f cameraInitialPosition = camera.position;
             Vector3f cameraInitialFacing = camera.facing;
             float cameraInitialFOV = camera.fov;
+
+            if(keys[GLFW_KEY_T] && !inFpsTest) { // initiate fps test by turning on the flag and opening the benchmark file
+                std::string fpsBenchmarkFile = "fpsBenchmark.csv";
+                fpsTestOut.open(fpsBenchmarkFile, std::ios::out);
+                if(!fpsTestOut.is_open()) {
+                    std::cout << "unable to open file: " << fpsBenchmarkFile << std::endl;
+
+                } else {
+                    std::cout << "starting fps test writing to file: " << fpsBenchmarkFile << std::endl;
+                    inFpsTest = true;
+                }
+                fpsTestAngle = 0;
+            }
+            if(inFpsTest) {
+                fpsTestOut << fpsTestAngle << ", " << currentfps << std::endl;
+
+                HandleFpsTestMovement(8);
+                if(std::abs(fpsTestAngle - 2*M_PI) < 0.0001) {
+                    inFpsTest = false;
+                    fpsTestOut.close();
+                    std::cout << "finished fps testing" << std::endl;
+                }
+                return true; // camera has moved
+            }
             if (keys[GLFW_KEY_W]) { TranslateCamera(GLFW_KEY_W, cameraSpeed);}
             if (keys[GLFW_KEY_S]) {TranslateCamera(GLFW_KEY_S, cameraSpeed);}
             if (keys[GLFW_KEY_A]) {TranslateCamera(GLFW_KEY_A, cameraSpeed);}
@@ -441,5 +410,10 @@ class Scene {
         };
         unsigned int GetFrameIndex() {
             return frameIndex;
+        }
+        void HandleFpsTestMovement(float testDistance) {
+            camera.position = Vector3f(std::cos(fpsTestAngle), std::sin(fpsTestAngle), 0) * testDistance;
+            camera.facing = camera.position.Normalize() * -1;
+            fpsTestAngle += M_PI * 0.0015625;
         }
 };

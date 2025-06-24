@@ -90,37 +90,30 @@ public:
     }
 };
 
-class Triangle : public Shape
-{
-private:
-    static const unsigned int type = 1;
-
-public:
-    Triangle(Vector3f v1, Vector3f v2, Vector3f v3, Material::Material material, bool isLight = false)
-        : Shape(v1, v2, v3, ((v2 - v1).Cross(v3 - v1)).Normalize(), 1.0f, material, isLight) {}
-
-    unsigned int getType() const override {
-        return type;
-    }
-
-    Vector3f GetAveragePosition() {
-        return (position + position2 + position3)/3;
-    }
-};
-
-
 class Tri {
 public:
     Vector3f pos1;
     Vector3f pos2;
     Vector3f pos3;
+    Vector3f maxi; // precompute maxi and mini
+    Vector3f mini; // precompute maxi and mini
+    Vector3f centroid; // precompute centroid
     int materialsIndex;
 
     Tri(Vector3f pos1, Vector3f pos2, Vector3f pos3, int materialsIndex = 0)
     : pos1(pos1), pos2(pos2), pos3(pos3), materialsIndex(materialsIndex) {
+        maxi = Vector3f(std::max(pos1.x, std::max(pos2.x, pos3.x)),
+                    std::max(pos1.y, std::max(pos2.y, pos3.y)),
+                    std::max(pos1.z, std::max(pos2.z, pos3.z)));
+        mini = Vector3f(std::min(pos1.x, std::min(pos2.x, pos3.x)),
+                    std::min(pos1.y, std::min(pos2.y, pos3.y)),
+                    std::min(pos1.z, std::min(pos2.z, pos3.z)));
+        centroid = (pos1 + pos2 + pos3) / 3;
     }
 
     Vector3f Centroid() const{
-        return (pos1 + pos2 + pos3)/3;
+        return centroid;
     }
+
+
 };
