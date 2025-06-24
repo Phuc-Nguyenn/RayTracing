@@ -260,6 +260,8 @@ bool hitBoundingBox(Ray ray, BoundingBox aabb, inout HitRecord hitRecord) {
     return hitRecord.hitAnything;
 }
 
+#define ViewBoxHits true
+
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
     hitRecord.hitAnything = false;
@@ -282,11 +284,12 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     if(u_BoundingBoxesCount > 0)
         stack[stackptr++] = 0;
     int leafhitNum = 0;
+    int iterationsCount = 0;
     while(stackptr > 0) {
         int indexBB = stack[--stackptr];
-
         BoundingBox aabb = getBoundingBox(indexBB);
         HitRecord hitRecordTmp;
+        iterationsCount += 1;
         if(!hitBoundingBox(ray, aabb, hitRecordTmp) || hitRecordTmp.t > hitRecord.t) { 
             continue;
         }
@@ -319,6 +322,15 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
                 if(hitLeftRecord.t < hitRecord.t) stack[stackptr++] = indexBB + 1;
                 if(hitRightRecord.t < hitRecord.t) stack[stackptr++] = aabb.rightChildIndex;
             }
+        }
+    }
+    // Color is white if iterationsCount is below threshold, otherwise gets more red as iterationsCount increases
+    int threshold = 64;
+    if (ViewBoxHits) {
+        if (iterationsCount < threshold) {
+            hitRecord.material.colour = (vec3(1.0)/threshold)*iterationsCount;
+        } else {
+            hitRecord.material.colour =  vec3(1.0) - (vec3(0.0,1.0,1.0)/threshold)*(iterationsCount - threshold);
         }
     }
     return hitRecord.hitAnything;
@@ -382,6 +394,9 @@ vec3 RayColour(Ray ray, int iRayCount) {
 
         if (u_BounceLimit == 1) {
             return vec3(abs(hitRecord.normal));
+        }
+        if (ViewBoxHits) {
+            return vec3(hitRecord.material.colour);
         }
 
         vec2 seed = mod(vec2(

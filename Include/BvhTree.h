@@ -37,7 +37,7 @@ class BvhTree
 private:
     std::vector<BoundingBox> boundingBoxes;
     std::vector<Tri> triangles;
-    int depth;
+    int maxDepth;
     int maxTrianglesPerLeaf; // configurable threshold for when to stop subdividing
     unsigned long int numberOfsplitsTotal;
     unsigned long int numberOfDegenerateSplits;
@@ -128,9 +128,9 @@ private:
         }
     }
 
+    const std::vector<float> splitRatios = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9};
     std::pair<Dimension, float> SplitBest(int l, int r, const BoundingBox& box) {
         std::vector<Vector3f> splitTestValues;
-        std::vector<float> splitRatios = {0.35, 0.4, 0.425, 0.45, 0.475, 0.5, 0.525, 0.55, 0.575, 0.6, 0.65};
         for(const float& splitRatio : splitRatios) {
             splitTestValues.push_back(box.mini * (1 - splitRatio) + box.maxi * splitRatio);
         }
@@ -213,6 +213,8 @@ private:
 
     // make bounding boxes for l and r (recursively)
     // returns the index of the box made in the boxes container, for the current level it is equal to the size - 1 before left and right have been explored (because they add more child boxes)
+    unsigned int leafDepthSum;
+    unsigned int leafNodescount;
     int MakeBox(int l, int r, int currDepth = 1) {
         
         // Base case: empty range
@@ -227,11 +229,7 @@ private:
         int myIndex = boundingBoxes.size() - 1;
         
         if(r - l > maxTrianglesPerLeaf) {
-            depth = std::max(depth, currDepth);
-            // partition int [left] [overlap] [right]
-            // auto[splitDimension, splitValue] = SplitLongestDimension(newBox);
-            // auto[splitDimension, splitValue] = SplitBestDimension(l, r, newBox);
-            // auto[splitDimension, splitValue] = SplitBestMedianDimension(l, r, newBox);
+            maxDepth = std::max(maxDepth, currDepth);
             auto[splitDimension, splitValue] = SplitBest(l, r, newBox);
             int midIdx = PartitionRange(l, r, splitDimension, splitValue);
             // prevent degenerate
@@ -247,13 +245,15 @@ private:
             // std::cout << "Creating leaf node with " << (r - l) << " triangles at indices [" << l << ", " << r << ")" << std::endl;
             boundingBoxes[myIndex].triangleStartIndex = l;
             boundingBoxes[myIndex].triangleCount = r - l;
+            leafDepthSum += currDepth;
+            leafNodescount++;
         }
         return myIndex;
     };
 
 public:
-    BvhTree() : maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES), depth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
-    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf), depth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
+    BvhTree() : maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
+    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
 
     void SetTriangles(std::vector<Tri> newTriangles) {
         this->triangles = std::move(newTriangles); // Fixed: assign to member variable
@@ -268,11 +268,9 @@ public:
         return maxTrianglesPerLeaf;
     }
 
-    int GetDepth() const {
-        return depth;
-    }
-
     std::pair<std::vector<BoundingBox>, std::vector<Tri>> BuildTree() {
+        leafDepthSum = 0;
+        leafNodescount = 0;
         if (triangles.empty()) {
             std::cout << "Warning: no triangles to build tree from" << std::endl;
         } else {
@@ -283,6 +281,8 @@ public:
             std::cout << "constructing BVH structure took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "ms" << std::endl;
             std::cout << "number of total splits: " << numberOfsplitsTotal << std::endl;
             std::cout << "number of degenerate splits: " << numberOfDegenerateSplits << ", as a percentage of total: " << float(numberOfDegenerateSplits)/numberOfsplitsTotal << std::endl;
+            std::cout << "number of leaf nodes: " << leafNodescount << std::endl;
+            std::cout << "maximum depth of leaf nodes " << maxDepth << ", average depth: " << float(leafDepthSum)/leafNodescount << std::endl;
         }
         return {boundingBoxes, triangles};
     }

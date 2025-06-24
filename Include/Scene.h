@@ -169,7 +169,6 @@ class Scene {
             BvhTree bvhtree(triangles);
             auto [boundingBoxes, reorderedTriangles] = bvhtree.BuildTree();
             triangles = reorderedTriangles;
-            std::cout << "constructed BVH tree with max depth of: " << bvhtree.GetDepth() << std::endl;
             // Flatten all triangles into a single vector
             std::vector<float> trianglesVertexData = FlattenTrianglesVertices(triangles);
             std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(triangles);
