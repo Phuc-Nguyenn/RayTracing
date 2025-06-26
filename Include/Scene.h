@@ -65,6 +65,7 @@ class Scene {
         
         Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), shapesIndex(0), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0), objectsIndex(0), inFpsTest(false), fpsTestAngle(0) {
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, "u_BounceLimit"), 4));
+            GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 0));
         }
 
         void Finalise() {
@@ -376,8 +377,13 @@ class Scene {
             if (keys[GLFW_KEY_RIGHT]) { RotateCameraFacing(GLFW_KEY_RIGHT, rotationSpeed);}
             if (keys[GLFW_KEY_SPACE]) {TranslateCamera(GLFW_KEY_SPACE, cameraSpeed*1.5);}
             if (keys[GLFW_KEY_LEFT_CONTROL]) {TranslateCamera(GLFW_KEY_LEFT_CONTROL, cameraSpeed*1.5);}
+            if (keys[GLFW_KEY_GRAVE_ACCENT]) {
+                GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 1));
+                refreshStillCamera = true;
+            }
             for (unsigned int key = GLFW_KEY_1; key <= GLFW_KEY_6; ++key) {
                 if (keys[key]) {
+                    GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 0));
                     toggleLowBounce(key);
                     refreshStillCamera = true;
                     break;

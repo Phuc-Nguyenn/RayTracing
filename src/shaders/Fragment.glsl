@@ -260,7 +260,7 @@ bool hitBoundingBox(Ray ray, BoundingBox aabb, inout HitRecord hitRecord) {
     return hitRecord.hitAnything;
 }
 
-#define ViewBoxHits true
+uniform bool u_ViewBoxHits;
 
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
@@ -325,12 +325,15 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
         }
     }
     // Color is white if iterationsCount is below threshold, otherwise gets more red as iterationsCount increases
-    int threshold = 64;
-    if (ViewBoxHits) {
-        if (iterationsCount < threshold) {
-            hitRecord.material.colour = (vec3(1.0)/threshold)*iterationsCount;
+    int threshold1 = 64;
+    int threshold2 = 128;
+    if (u_ViewBoxHits) {
+        if (iterationsCount < threshold1) {
+            hitRecord.material.colour = (vec3(1.0)/threshold1)*iterationsCount;
+        } else if(iterationsCount < threshold2) {
+            hitRecord.material.colour =  vec3(1.0) - (vec3(0.0,1.0,1.0)/threshold1)*(iterationsCount - threshold1);
         } else {
-            hitRecord.material.colour =  vec3(1.0) - (vec3(0.0,1.0,1.0)/threshold)*(iterationsCount - threshold);
+            hitRecord.material.colour = vec3(1.0, 0.0, 0) - (vec3(1.0, 0, 0)/(threshold2-threshold1))*(iterationsCount - threshold2);
         }
     }
     return hitRecord.hitAnything;
@@ -391,14 +394,13 @@ vec3 RayColour(Ray ray, int iRayCount) {
     const float maxFogTravel = 1.0/FOG_DENSITY;
     for(int i=0; i<u_BounceLimit; ++i) {
         bool hitAnything = HitHittableList(ray, hitRecord);
-
+        
+        if (u_ViewBoxHits) {
+            return vec3(hitRecord.material.colour);
+        }
         if (u_BounceLimit == 1) {
             return vec3(abs(hitRecord.normal));
         }
-        if (ViewBoxHits) {
-            return vec3(hitRecord.material.colour);
-        }
-
         vec2 seed = mod(vec2(
             Hashf(ray.origin.x + ray.direction.y) + Hash(i) + Hash(iRayCount) + Hash(u_FrameIndex) + Hashf(u_RandSeed.x * u_BounceLimit),
             Hashf(ray.origin.y + ray.direction.z) + Hash(i+120) + Hash(iRayCount) + Hashf(u_RandSeed.y * u_BounceLimit)
