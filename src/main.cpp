@@ -154,7 +154,7 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     LoadSkybox(shaderProgramId, skyBoxPath, 1);
 
     /** rng noise textures */
-    LoadNoiseTexture(shaderProgramId, "./RayTracer/Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
+    LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
 
     scene.LoadObjects(objectPaths);
 

@@ -4,7 +4,7 @@ project(ray_tracer VERSION 0.1.0)
 
 
 set(CMAKE_CXX_COMPILER "/usr/bin/g++") 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O5") # Maximum optimization for GCC
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3") # Example for gprof
 
 # Add the executable
 add_executable(ray_tracer src/Shader.cpp src/main.cpp)
