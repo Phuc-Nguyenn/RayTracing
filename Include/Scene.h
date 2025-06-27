@@ -65,7 +65,6 @@ class Scene {
         
         Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), shapesIndex(0), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0), objectsIndex(0), inFpsTest(false), fpsTestAngle(0) {
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, "u_BounceLimit"), 4));
-            GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 0));
         }
 
         void Finalise() {

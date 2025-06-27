@@ -7,6 +7,10 @@
 #include <limits.h>
 #include <cfloat>
 #include <chrono>
+#include <stack>
+#include <mutex>
+#include <thread>
+#include <future>
 
 class BoundingBox {
 public:
@@ -28,6 +32,7 @@ public:
     bool IsLeaf() const { return triangleCount > 0; }
 };
 
+#include <atomic>
 #define DEFAULT_LEAF_TRIANGLES 3
 /**
  * bounding volume heirachy tree that takes in a list of vectors belonging to some object and outputs the 
@@ -37,12 +42,10 @@ class BvhTree
 private:
     std::vector<BoundingBox> boundingBoxes;
     std::vector<Tri> triangles;
-    int maxDepth;
-    int maxTrianglesPerLeaf; // configurable threshold for when to stop subdividing
-    unsigned long int numberOfsplitsTotal;
-    unsigned long int numberOfDegenerateSplits;
-
-
+    std::atomic<int> maxDepth;
+    const int maxTrianglesPerLeaf = DEFAULT_LEAF_TRIANGLES; // configurable threshold for when to stop subdividing
+    std::atomic<unsigned long int> numberOfsplitsTotal;
+    std::atomic<unsigned long int> numberOfDegenerateSplits;
 
     enum Dimension {
         x = 0,
@@ -80,54 +83,6 @@ private:
         return areaL * countL + areaR * countR;
     }
 
-    // splits in half
-    std::pair<Dimension, float> SplitBestDimension(int l, int r, const BoundingBox& box) {
-        Vector3f splitValue = (box.maxi + box.mini) * 0.5;
-        // X Split
-        int midIdx = PartitionRange(l, r, Dimension::x, splitValue.x);
-        float scoreX = surfaceAreaScoreOfSplit(l, r, midIdx);
-
-        // Y Split
-        midIdx = PartitionRange(l, r, Dimension::y, splitValue.y);
-        float scoreY = surfaceAreaScoreOfSplit(l, r, midIdx);
-
-        // Z Split
-        midIdx = PartitionRange(l, r, Dimension::z, splitValue.z);
-        float scoreZ = surfaceAreaScoreOfSplit(l, r, midIdx);
-        if (scoreX <= scoreY && scoreX <= scoreZ){
-            return {Dimension::x, splitValue.x};
-        } else if (scoreY <= scoreZ) {
-            return {Dimension::y, splitValue.y};
-        } else {
-            return {Dimension::z, splitValue.z};
-        }
-    }
-
-    std::pair<Dimension, float> SplitBestMedianDimension(int l, int r, const BoundingBox& box) {
-        Vector3f splitValue = (box.maxi + box.mini) * 0.5;
-        // X Split
-        float medianX = findMedianOfTris(l, r, Dimension::x);
-        int midIdx = PartitionRange(l, r, Dimension::x, medianX);
-        float scoreX = surfaceAreaScoreOfSplit(l, r, midIdx);
-
-        // Y Split
-        float medianY = findMedianOfTris(l, r, Dimension::y);
-        midIdx = PartitionRange(l, r, Dimension::y, medianY);
-        float scoreY = surfaceAreaScoreOfSplit(l, r, midIdx);
-
-        // Z Split
-        float medianZ = findMedianOfTris(l, r, Dimension::z);
-        midIdx = PartitionRange(l, r, Dimension::z, medianZ);
-        float scoreZ = surfaceAreaScoreOfSplit(l, r, midIdx);
-        if (scoreX <= scoreY && scoreX <= scoreZ){
-            return {Dimension::x, medianX};
-        } else if (scoreY <= scoreZ) {
-            return {Dimension::y, medianY};
-        } else {
-            return {Dimension::z, medianZ};
-        }
-    }
-
     const std::vector<float> splitRatios = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9};
     std::pair<Dimension, float> SplitBest(int l, int r, const BoundingBox& box) {
         std::vector<Vector3f> splitTestValues;
@@ -150,7 +105,7 @@ private:
             auto bestSplit = *std::min_element(results.begin(), results.end());
             return {std::get<2>(bestSplit), std::get<1>(bestSplit)};
         }
-        return SplitLongestDimension(box);
+        return {Dimension::x, (box.mini.x + box.maxi.x) * 0.5f}; // Fallback to a default split if no valid splits found
     }
 
     std::pair<Vector3f, Vector3f> GetBoundingBoxOfRange(int l, int r) {
@@ -215,12 +170,28 @@ private:
     // returns the index of the box made in the boxes container, for the current level it is equal to the size - 1 before left and right have been explored (because they add more child boxes)
     unsigned int leafDepthSum;
     unsigned int leafNodescount;
-    int MakeBox(int l, int r, int currDepth = 1) {
-        
+
+    struct Task{
+        int l;
+        int r;
+        int depth;
+        int* returnIndex;
+    };
+
+    std::stack<Task> tasks;
+    std::mutex tasksMutex;
+
+    void AtomicMax(std::atomic<int>& locMaxDepth, int value) {
+        int current = locMaxDepth.load();
+        while (current < value && !locMaxDepth.compare_exchange_weak(current, value)) {
+        }
+    }
+
+    void MakeBox(int l, int r, int currDepth = 1, int* returnIndex) { 
         // Base case: empty range
         if (l >= r) {
             std::cout << "Warning: empty range [" << l << ", " << r << ")" << std::endl;
-            return -1;
+            return;
         }
         // create a new bounding box for all triangles in current box [l,r)
         auto[mini, maxi] = GetBoundingBoxOfRange(l, r);
@@ -229,7 +200,7 @@ private:
         int myIndex = boundingBoxes.size() - 1;
         
         if(r - l > maxTrianglesPerLeaf) {
-            maxDepth = std::max(maxDepth, currDepth);
+            AtomicMax(maxDepth, currDepth);
             auto[splitDimension, splitValue] = SplitBest(l, r, newBox);
             int midIdx = PartitionRange(l, r, splitDimension, splitValue);
             // prevent degenerate
@@ -238,7 +209,10 @@ private:
                 numberOfDegenerateSplits++;
             }
             MakeBox(l, midIdx, currDepth + 1); // left child index is myindex + 1
-            boundingBoxes[myIndex].rightChildIndex = MakeBox(midIdx, r, currDepth + 1);
+            tasksMutex.lock();
+            tasks.emplace(l, midIdx, currDepth + 1, nullptr);
+            tasks.emplace(midIdx, r, currDepth + 1, &boundingBoxes[myIndex].rightChildIndex);
+            tasksMutex.unlock();
             numberOfsplitsTotal++;
         } else {
             // Leaf node - can contain multiple triangles
@@ -248,25 +222,24 @@ private:
             leafDepthSum += currDepth;
             leafNodescount++;
         }
-        return myIndex;
+        if(returnIndex) {
+            *returnIndex = myIndex; // return the index of the box made
+        }
     };
 
 public:
-    BvhTree() : maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
-    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES) : triangles(std::move(triangles)), maxTrianglesPerLeaf(maxTrianglesPerLeaf), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
+    BvhTree() : maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
+    BvhTree(std::vector<Tri> triangles) : triangles(std::move(triangles)), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
 
     void SetTriangles(std::vector<Tri> newTriangles) {
         this->triangles = std::move(newTriangles); // Fixed: assign to member variable
         boundingBoxes.clear(); // Clear previous tree when setting new triangles
     }
 
-    void SetMaxTrianglesPerLeaf(int maxTriangles) {
-        maxTrianglesPerLeaf = std::max(1, maxTriangles); // Ensure at least 1
-    }
-
     int GetMaxTrianglesPerLeaf() const {
         return maxTrianglesPerLeaf;
     }
+
 
     std::pair<std::vector<BoundingBox>, std::vector<Tri>> BuildTree() {
         leafDepthSum = 0;
@@ -276,13 +249,29 @@ public:
         } else {
             auto begin = std::chrono::steady_clock::now();
             boundingBoxes.clear(); // Clear previous tree
-            MakeBox(0, triangles.size());
+            
+            tasksMutex.lock();
+            tasks.emplace(0, triangles.size(), 1, nullptr);
+            tasksMutex.unlock();
+            std::vector<std::promise<int>> workers(16);
+            
+            tasksMutex.lock();
+
+            while(!tasks.empty()) {
+                tasksMutex.unlock();
+                tasksMutex.lock();
+                Task task = tasks.top(); tasks.pop();
+                tasksMutex.unlock();
+                
+                
+            }
+            
             auto end = std::chrono::steady_clock::now();
             std::cout << "constructing BVH structure took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "ms" << std::endl;
             std::cout << "number of total splits: " << numberOfsplitsTotal << std::endl;
             std::cout << "number of degenerate splits: " << numberOfDegenerateSplits << ", as a percentage of total: " << float(numberOfDegenerateSplits)/numberOfsplitsTotal << std::endl;
             std::cout << "number of leaf nodes: " << leafNodescount << std::endl;
-            std::cout << "maximum depth of leaf nodes " << maxDepth << ", average depth: " << float(leafDepthSum)/leafNodescount << std::endl;
+            std::cout << "maximum depth of leaf nodes " << maxDepth.load() << ", average depth: " << float(leafDepthSum)/leafNodescount << std::endl;
         }
         return {boundingBoxes, triangles};
     }
