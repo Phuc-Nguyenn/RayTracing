@@ -49,7 +49,6 @@ Vector3f RotateAroundAxis(const Vector3f& v, const Vector3f& k, float a) {
 
 class Scene {
     private:
-        unsigned int shapesIndex;
         int objectsIndex; // Changed from int to unsigned int
         unsigned int shaderProgramId;
         unsigned int frameIndex;
@@ -63,24 +62,14 @@ class Scene {
 
     public:
         
-        Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), shapesIndex(0), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0), objectsIndex(0), inFpsTest(false), fpsTestAngle(0) {
+        Scene(unsigned int shaderProgramId) : shaderProgramId(shaderProgramId), camera{{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 90}, frameIndex(0), objectsIndex(0), inFpsTest(false), fpsTestAngle(0) {
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, "u_BounceLimit"), 4));
         }
 
         void Finalise() {
-            GLCALL(glUniform3f(GetUniformLocation("u_Camera.position"), camera.position.x, camera.position.y, camera.position.z));
-            GLCALL(glUniform3f(GetUniformLocation("u_Camera.facing"), camera.facing.x, camera.facing.y, camera.facing.z));
-            GLCALL(glUniform1f(GetUniformLocation("u_Camera.fov"), camera.fov));
-            GLCALL(glUniform1f(GetUniformLocation("u_Camera.viewportWidth"), camera.viewportWidth));
-            GLCALL(glUniform1f(GetUniformLocation("u_Camera.viewportDistance"), camera.viewportDistance));
-
-            auto shapeCountLoc = glGetUniformLocation(shaderProgramId, "u_HittablesCount");
-            GLCALL(glUniform1ui(shapeCountLoc, shapesIndex));
-
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, "u_FrameIndex"), frameIndex++));
             GLCALL(glUniform3f(glGetUniformLocation(shaderProgramId, "u_RandSeed"), float(std::rand()) / RAND_MAX, float(std::rand()) / RAND_MAX, float(std::rand()) / RAND_MAX));
         }
-
 
         void ResetFrameIndex() {
             frameIndex = 0;
@@ -123,16 +112,19 @@ class Scene {
             std::vector<float> flattened;
             flattened.reserve(boundingBoxes.size() * 9);
             for (const auto& box : boundingBoxes) {
-            // Use 'mini' and 'maxi' as per the BoundingBox definition
-            flattened.push_back(box.maxi.x);
-            flattened.push_back(box.maxi.y);
-            flattened.push_back(box.maxi.z);
-            flattened.push_back(box.mini.x);
-            flattened.push_back(box.mini.y);
-            flattened.push_back(box.mini.z);
-            flattened.push_back(static_cast<float>(box.rightChildIndex));
-            flattened.push_back(static_cast<float>(box.triangleStartIndex));
-            flattened.push_back(static_cast<float>(box.triangleCount));
+                // Use 'mini' and 'maxi' as per the BoundingBox definition
+                flattened.push_back(box.maxi.x);
+                flattened.push_back(box.maxi.y);
+                flattened.push_back(box.maxi.z);
+                flattened.push_back(box.mini.x);
+                flattened.push_back(box.mini.y);
+                flattened.push_back(box.mini.z);
+                flattened.push_back(static_cast<float>(box.triangleCount));
+                if(box.triangleCount == 0) { //if leaf node then
+                    flattened.push_back(static_cast<float>(box.rightChildIndex));
+                } else {
+                    flattened.push_back(static_cast<float>(box.triangleStartIndex));
+                }
             }
             return flattened;
         }
@@ -175,7 +167,7 @@ class Scene {
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
             SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", 3, GL_RGB32F);
             SendDataAsTextureBuffer(trianglesMatIdxData, triangles.size(), "u_MaterialsIndex", 4, GL_R32I);
-            SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 5, GL_RGB32F);
+            SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 5, GL_RGBA32F);
             SendSceneMaterials();
             
             std::cout << "triangles count: " << triangles.size() << std::endl;
@@ -226,39 +218,39 @@ class Scene {
             glUniform1i(glGetUniformLocation(shaderProgramId, "u_MaterialsCount"), materials.size()); 
         }
 
-        void AddShape(const Shape& shape) {
-            auto typeLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"type"}});
-            auto positionLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position"}});
-            auto position2Loc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position2"}});
-            auto position3Loc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position3"}});
-            auto directionLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"direction"}});
-            auto scaleLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"scale"}});
-            auto colourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"colour"}});
-            auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"specularColour"}});
-            auto roughnessLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"roughness"}});
-            auto metallicLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"metallic"}});
-            auto transparencyLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"transparency"}});
-            auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"refractionIndex"}});
-            auto isLightLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"isLight"}});
+        // void AddShape(const Shape& shape) {
+        //     auto typeLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"type"}});
+        //     auto positionLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position"}});
+        //     auto position2Loc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position2"}});
+        //     auto position3Loc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"position3"}});
+        //     auto directionLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"direction"}});
+        //     auto scaleLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"scale"}});
+        //     auto colourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"colour"}});
+        //     auto specularcolourLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"specularColour"}});
+        //     auto roughnessLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"roughness"}});
+        //     auto metallicLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"metallic"}});
+        //     auto transparencyLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"transparency"}});
+        //     auto refractionIdxLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"refractionIndex"}});
+        //     auto isLightLoc = GetUniformLocationIdx("u_Hittable", shapesIndex, {{"material"}, {"isLight"}});
            
-            glUniform1ui(typeLoc, shape.getType());
-            glUniform3f(positionLoc, shape.getPosition().x, shape.getPosition().y, shape.getPosition().z);
-            glUniform3f(position2Loc, shape.getPosition2().x, shape.getPosition2().y, shape.getPosition2().z);
-            glUniform3f(position3Loc, shape.getPosition3().x, shape.getPosition3().y, shape.getPosition3().z);
-            glUniform3f(directionLoc, shape.getDir().x, shape.getDir().y, shape.getDir().z);
-            glUniform1f(scaleLoc, shape.getScale());
+        //     glUniform1ui(typeLoc, shape.getType());
+        //     glUniform3f(positionLoc, shape.getPosition().x, shape.getPosition().y, shape.getPosition().z);
+        //     glUniform3f(position2Loc, shape.getPosition2().x, shape.getPosition2().y, shape.getPosition2().z);
+        //     glUniform3f(position3Loc, shape.getPosition3().x, shape.getPosition3().y, shape.getPosition3().z);
+        //     glUniform3f(directionLoc, shape.getDir().x, shape.getDir().y, shape.getDir().z);
+        //     glUniform1f(scaleLoc, shape.getScale());
             
-            const Material::Material material = shape.getMaterial();
-            glUniform3f(colourLoc, material.colour.x, material.colour.y, material.colour.z);
-            glUniform3f(specularcolourLoc, material.specularColour.x, material.specularColour.y, material.specularColour.z);
-            glUniform1f(roughnessLoc, material.roughness);
-            glUniform1f(metallicLoc, material.metallic);
-            glUniform1f(transparencyLoc, material.transparency);
-            glUniform1f(refractionIdxLoc, material.refractionIndex);
-            glUniform1i(isLightLoc, material.isLight ? 1 : 0);
+        //     const Material::Material material = shape.getMaterial();
+        //     glUniform3f(colourLoc, material.colour.x, material.colour.y, material.colour.z);
+        //     glUniform3f(specularcolourLoc, material.specularColour.x, material.specularColour.y, material.specularColour.z);
+        //     glUniform1f(roughnessLoc, material.roughness);
+        //     glUniform1f(metallicLoc, material.metallic);
+        //     glUniform1f(transparencyLoc, material.transparency);
+        //     glUniform1f(refractionIdxLoc, material.refractionIndex);
+        //     glUniform1i(isLightLoc, material.isLight ? 1 : 0);
 
-            shapesIndex++;
-        }
+        //     shapesIndex++;
+        // }
 
         void SetCamera(Camera camera) {
             this->camera = std::move(camera);
@@ -332,11 +324,11 @@ class Scene {
         bool HandleCameraMovement(bool keys[]) {
             
             bool refreshStillCamera = false;
-            float cameraSpeed = 0.2;
-            float rotationSpeed = 0.02;
+            float cameraSpeed = 0.15;
+            float rotationSpeed = 0.03;
             if (keys[GLFW_KEY_LEFT_SHIFT]) {
-                cameraSpeed = 0.5;
-                rotationSpeed = 0.04;
+                cameraSpeed = 0.3;
+                rotationSpeed = 0.06;
             }
             
             Vector3f cameraInitialPosition = camera.position;
@@ -364,37 +356,49 @@ class Scene {
                     fpsTestOut.close();
                     std::cout << "finished fps testing" << std::endl;
                 }
-                return true; // camera has moved
-            }
-            if (keys[GLFW_KEY_W]) { TranslateCamera(GLFW_KEY_W, cameraSpeed);}
-            if (keys[GLFW_KEY_S]) {TranslateCamera(GLFW_KEY_S, cameraSpeed);}
-            if (keys[GLFW_KEY_A]) {TranslateCamera(GLFW_KEY_A, cameraSpeed);}
-            if (keys[GLFW_KEY_D]) {TranslateCamera(GLFW_KEY_D, cameraSpeed);}
-            if (keys[GLFW_KEY_UP])    { RotateCameraFacing(GLFW_KEY_UP, rotationSpeed);}
-            if (keys[GLFW_KEY_DOWN])  { RotateCameraFacing(GLFW_KEY_DOWN, rotationSpeed);}
-            if (keys[GLFW_KEY_LEFT])  { RotateCameraFacing(GLFW_KEY_LEFT, rotationSpeed);}
-            if (keys[GLFW_KEY_RIGHT]) { RotateCameraFacing(GLFW_KEY_RIGHT, rotationSpeed);}
-            if (keys[GLFW_KEY_SPACE]) {TranslateCamera(GLFW_KEY_SPACE, cameraSpeed*1.5);}
-            if (keys[GLFW_KEY_LEFT_CONTROL]) {TranslateCamera(GLFW_KEY_LEFT_CONTROL, cameraSpeed*1.5);}
-            if (keys[GLFW_KEY_GRAVE_ACCENT]) {
-                GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 1));
-                refreshStillCamera = true;
-            }
-            for (unsigned int key = GLFW_KEY_1; key <= GLFW_KEY_6; ++key) {
-                if (keys[key]) {
-                    GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 0));
-                    toggleLowBounce(key);
+            } else {
+                if (keys[GLFW_KEY_W]) { TranslateCamera(GLFW_KEY_W, cameraSpeed);}
+                if (keys[GLFW_KEY_S]) {TranslateCamera(GLFW_KEY_S, cameraSpeed);}
+                if (keys[GLFW_KEY_A]) {TranslateCamera(GLFW_KEY_A, cameraSpeed);}
+                if (keys[GLFW_KEY_D]) {TranslateCamera(GLFW_KEY_D, cameraSpeed);}
+                if (keys[GLFW_KEY_UP])    { RotateCameraFacing(GLFW_KEY_UP, rotationSpeed);}
+                if (keys[GLFW_KEY_DOWN])  { RotateCameraFacing(GLFW_KEY_DOWN, rotationSpeed);}
+                if (keys[GLFW_KEY_LEFT])  { RotateCameraFacing(GLFW_KEY_LEFT, rotationSpeed);}
+                if (keys[GLFW_KEY_RIGHT]) { RotateCameraFacing(GLFW_KEY_RIGHT, rotationSpeed);}
+                if (keys[GLFW_KEY_SPACE]) {TranslateCamera(GLFW_KEY_SPACE, cameraSpeed*1.5);}
+                if (keys[GLFW_KEY_LEFT_CONTROL]) {TranslateCamera(GLFW_KEY_LEFT_CONTROL, cameraSpeed*1.5);}
+                if (keys[GLFW_KEY_GRAVE_ACCENT]) {
+                    GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 1));
                     refreshStillCamera = true;
-                    break;
+                }
+                for (unsigned int key = GLFW_KEY_1; key <= GLFW_KEY_6; ++key) {
+                    if (keys[key]) {
+                        GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_ViewBoxHits"), 0));
+                        toggleLowBounce(key);
+                        refreshStillCamera = true;
+                        break;
+                    }
+                }
+                if (keys[GLFW_KEY_C]) {
+                    camera.SetFOVTo(45);
+                } else {
+                    camera.SetFOVTo(120);
                 }
             }
-            if (keys[GLFW_KEY_C]) {
-                camera.SetFOVTo(45);
-            } else {
-                camera.SetFOVTo(120);
+            bool cameraMoved = !(cameraInitialFacing == camera.facing) || !(cameraInitialPosition == camera.position) || !(cameraInitialFOV == camera.fov) || refreshStillCamera;
+            if(!(cameraInitialPosition == camera.position) || refreshStillCamera)
+                GLCALL(glUniform3f(GetUniformLocation("u_Camera.position"), camera.position.x, camera.position.y, camera.position.z));
+            if(!(cameraInitialFacing == camera.facing) || refreshStillCamera)
+                GLCALL(glUniform3f(GetUniformLocation("u_Camera.facing"), camera.facing.x, camera.facing.y, camera.facing.z));
+            if(!(cameraInitialFOV == camera.fov) || refreshStillCamera) {
+                GLCALL(glUniform1f(GetUniformLocation("u_Camera.fov"), camera.fov));
+                GLCALL(glUniform1f(GetUniformLocation("u_Camera.viewportWidth"), camera.viewportWidth));
             }
-        
-            return !(cameraInitialFacing == camera.facing) || !(cameraInitialPosition == camera.position) || !(cameraInitialFOV == camera.fov) || refreshStillCamera;
+            
+            // GLCALL(glUniform1f(GetUniformLocation("u_Camera.viewportDistance"), camera.viewportDistance));
+
+            
+            return cameraMoved;
         }
         
         void toggleLowBounce(unsigned int key) { 

@@ -2,9 +2,9 @@
 
 out vec3 color;
 
-#define RAY_COUNT 3
-#define FOG_DENSITY 0.0
-#define FOG_HEIGHT 128.0
+#define RAY_COUNT 1
+#define FOG_DENSITY 0.02
+#define FOG_HEIGHT 32.0
 #define AIR_REFRACT 1.0003
 #define MAX_STACK_SIZE 64
 #define INF 1.0/0.0
@@ -42,6 +42,7 @@ struct Triangle {
     int materialIndex;
 };
 
+
 struct BoundingBox {
     vec3 maxi;
     vec3 mini;
@@ -49,6 +50,8 @@ struct BoundingBox {
     int triangleStartIndex;
     int rightChildIndex;
 };
+
+
 
 struct Camera {
     vec3 position;
@@ -61,6 +64,7 @@ struct Camera {
 struct Ray {
     vec3 origin;
     vec3 direction;
+    vec3 invDirection;
     float magnitude;
 };
 
@@ -132,6 +136,7 @@ Ray MakeRay(vec3 origin, vec3 direction, float magnitude) {
     Ray new;
     new.origin = origin;
     new.direction = direction;
+    new.invDirection = 1.0 / direction;
     new.magnitude = magnitude;
     return new;
 };
@@ -195,14 +200,13 @@ Triangle getTriangle(int index) {
 
 BoundingBox getBoundingBox(int index) {
     BoundingBox box;
-    int bufferIndex = index * 3;
-    box.maxi = texelFetch(u_BoundingBoxes, bufferIndex + 0).xyz;
-    box.mini = texelFetch(u_BoundingBoxes, bufferIndex + 1).xyz;
-    vec3 otherFields = texelFetch(u_BoundingBoxes, bufferIndex + 2).xyz; 
-
-    box.rightChildIndex = int(otherFields.x);
-    box.triangleStartIndex = int(otherFields.y);
-    box.triangleCount = int(otherFields.z);
+    int bufferIndex = index * 2;
+    vec4 first = texelFetch(u_BoundingBoxes, bufferIndex + 0);
+    vec4 second = texelFetch(u_BoundingBoxes, bufferIndex + 1);
+    box.maxi = first.xyz;
+    box.mini = vec3(first.w, second.xy);
+    box.triangleCount = int(second.z);
+    second.z >= 1 ? box.triangleStartIndex = int(second.w) : box.rightChildIndex = int(second.w);
     return box;
 }
 
@@ -242,10 +246,9 @@ bool hitTriangle(inout Triangle triangle, Ray r, inout HitRecord hitrecord) {
     return true;
 }
 
-bool hitBoundingBox(Ray ray, BoundingBox aabb, inout HitRecord hitRecord) {
-    vec3 invDir = 1.0 / ray.direction;
-    vec3 t0s = (aabb.mini - ray.origin) * invDir;
-    vec3 t1s = (aabb.maxi - ray.origin) * invDir;
+bool hitBoundingBox(Ray ray, BoundingBox aabb, out HitRecord hitRecord) {
+    vec3 t0s = (aabb.mini - ray.origin) * ray.invDirection;
+    vec3 t1s = (aabb.maxi - ray.origin) * ray.invDirection;
 
     vec3 tsmaller = min(t0s, t1s);
     vec3 tbigger = max(t0s, t1s);
@@ -254,7 +257,6 @@ bool hitBoundingBox(Ray ray, BoundingBox aabb, inout HitRecord hitRecord) {
     float tmax = min(min(tbigger.x, tbigger.y), tbigger.z);
 
     hitRecord.hitAnything = bool(tmax >= max(tmin, 0.0));
-    hitRecord.frontFace = true;
     hitRecord.t = tmin;
 
     return hitRecord.hitAnything;
@@ -262,35 +264,23 @@ bool hitBoundingBox(Ray ray, BoundingBox aabb, inout HitRecord hitRecord) {
 
 uniform bool u_ViewBoxHits;
 
-bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
+bool HitHittableList(Ray ray, inout HitRecord hitRecord, out uint iterationsCount) {
     hitRecord.t = INF;
     hitRecord.hitAnything = false;
     hitRecord.materialIndex = -1;
 
-    for(uint i = 0; i < u_HittablesCount; ++i) {
-        Hittable hittable = u_Hittable[i];
-        HitRecord hitRecordTmp;
-        if(hittable.type == SPHERE && hitSphere(Sphere(hittable.position, hittable.scale), ray, hitRecordTmp)) {
-            if(hitRecord.t > hitRecordTmp.t) {
-                hitRecord = hitRecordTmp;
-                hitRecord.material = hittable.material;
-                hitRecord.hitAnything = true;
-            }
-        }
-    }
-
     int stack[MAX_STACK_SIZE];
     int stackptr = 0;
-    if(u_BoundingBoxesCount > 0)
+    if(u_BoundingBoxesCount > 0) 
         stack[stackptr++] = 0;
     int leafhitNum = 0;
-    int iterationsCount = 0;
+    iterationsCount = 0;
     while(stackptr > 0) {
         int indexBB = stack[--stackptr];
         BoundingBox aabb = getBoundingBox(indexBB);
         HitRecord hitRecordTmp;
         iterationsCount += 1;
-        if(!hitBoundingBox(ray, aabb, hitRecordTmp) || hitRecordTmp.t > hitRecord.t) { 
+        if(!hitBoundingBox(ray, aabb, hitRecordTmp) || hitRecordTmp.t >= hitRecord.t) { 
             continue;
         }
         if(aabb.triangleCount > 0 && aabb.triangleStartIndex >= 0){ // is leaf
@@ -325,9 +315,9 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
         }
     }
     // Color is white if iterationsCount is below threshold, otherwise gets more red as iterationsCount increases
-    int threshold1 = 64;
-    int threshold2 = 128;
     if (u_ViewBoxHits) {
+        int threshold1 = 64;
+        int threshold2 = 128;
         if (iterationsCount < threshold1) {
             hitRecord.material.colour = (vec3(1.0)/threshold1)*iterationsCount;
         } else if(iterationsCount < threshold2) {
@@ -355,7 +345,7 @@ bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colo
     bool scattered = false;
 
     Ray fogScope = MakeRay(ray.origin, ray.direction, 0.0);
-    float distanceToFog = (FOG_HEIGHT - ray.origin.z) / ray.direction.z ;
+    float distanceToFog = (FOG_HEIGHT - ray.origin.z) * ray.invDirection.z ;
 
     if (ray.direction.z >= 0.0 && ray.origin.z < FOG_HEIGHT) {
         fogScope.magnitude = min(distanceToFog, hitRecord.t);
@@ -388,24 +378,28 @@ bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colo
     return scattered;
 }
 
-vec3 RayColour(Ray ray, int iRayCount) {
+vec3 RayColour(Ray ray, uint rayIterations, int iRayCountSeed, inout uint AABBiterations) {
     HitRecord hitRecord;
     vec3 rayColour = vec3(1.0);
     const float maxFogTravel = 1.0/FOG_DENSITY;
-    for(int i=0; i<u_BounceLimit; ++i) {
-        bool hitAnything = HitHittableList(ray, hitRecord);
-        
+    AABBiterations = 0;
+    for(int i=0; i<rayIterations; ++i) {
+        uint iterationsCount;
+        bool hitAnything = HitHittableList(ray, hitRecord, iterationsCount);
+        AABBiterations += iterationsCount;
         if (u_ViewBoxHits) {
+            AABBiterations = 0;
             return vec3(hitRecord.material.colour);
-        }
-        if (u_BounceLimit == 1) {
+        } else if (u_BounceLimit == 1) {
+            AABBiterations = 0;
             return vec3(abs(hitRecord.normal));
         }
+
         vec2 seed = mod(vec2(
-            Hashf(ray.origin.x + ray.direction.y) + Hash(i) + Hash(iRayCount) + Hash(u_FrameIndex) + Hashf(u_RandSeed.x * u_BounceLimit),
-            Hashf(ray.origin.y + ray.direction.z) + Hash(i+120) + Hash(iRayCount) + Hashf(u_RandSeed.y * u_BounceLimit)
+            Hashf(ray.origin.x + ray.direction.y) + Hash(i) + Hash(iRayCountSeed) + Hash(u_FrameIndex) + Hashf(u_RandSeed.x * u_BounceLimit),
+            Hashf(ray.origin.y + ray.direction.z) + Hash(i+120) + Hash(iRayCountSeed) + Hashf(u_RandSeed.y * u_BounceLimit)
         ), vec2(100, 100))/ 100;
-        
+
         if (VolumetricScatter(hitRecord, ray, rayColour, seed-vec2(0.31), maxFogTravel)) {
            continue;
         }
@@ -431,27 +425,47 @@ vec3 RayColour(Ray ray, int iRayCount) {
             nextDirection = isSpecular ? specularDir : diffuseDir;
             rayColour *= isSpecular ? mix(material.specularColour, material.colour, material.metallic) : material.colour;
         }
-        ray = Ray(hitRecord.hitPoint + 1e-4 * nextDirection, nextDirection, 1);
+        ray = MakeRay(hitRecord.hitPoint + 1e-4 * nextDirection, nextDirection, 1);
     }
+    AABBiterations /= rayIterations;
     return vec3(0.0);
 }
+
+vec3 getAverageColourInSquare(int order, out float variance) {
+    vec3 sum = vec3(0.0);
+    int count = 0;
+    int halfOrder = order / 2;
+    float minBrightness = 1e20;
+    float maxBrightness = -1e20;
+    for (int y = -halfOrder; y <= halfOrder; ++y) {
+        for (int x = -halfOrder; x <= halfOrder; ++x) {
+            vec2 offset = vec2(float(x), float(y));
+            vec2 sampleUV = (gl_FragCoord.xy + offset) / screenResolution;
+            vec3 col = texture(u_Accumulation, sampleUV).rgb;
+            float brightness = length(col);
+            minBrightness = min(minBrightness, brightness);
+            maxBrightness = max(maxBrightness, brightness);
+            sum += col;
+            count++;
+        }
+    }
+    variance = maxBrightness - minBrightness;
+    return sum / float(count);
+}
+
 void main()
 {
     vec3 rgb = vec3(0.0);
     vec2 uv = gl_FragCoord.xy / screenResolution;
     vec3 previous = texture(u_Accumulation, uv).rgb;
-    vec3 previousl = texture(u_Accumulation, uv + vec2(-1, 0)/screenResolution).rgb;
-    vec3 previousr = texture(u_Accumulation, uv + vec2(1, 0)/screenResolution).rgb;
-    vec3 previousu = texture(u_Accumulation, uv + vec2(0, 1)/screenResolution).rgb;
-    vec3 previousd = texture(u_Accumulation, uv + vec2(0, -1)/screenResolution).rgb;
-    int rayContributions = RAY_COUNT;
+
     for(int i=0; i<RAY_COUNT; ++i)
     { 
         vec2 randOffset = texture(u_RgbNoise, u_RandSeed.yz + vec2(0.007*i)).xy;
-        Ray initialRay = Ray(u_Camera.position, directionToViewport(randOffset), 1.0);
-        rgb += RayColour(initialRay, i);
+        Ray initialRay = MakeRay(u_Camera.position, directionToViewport(randOffset), 1.0);
+        uint AABBiterations;
+        rgb += RayColour(initialRay, u_BounceLimit, i, AABBiterations);
     }
-    rgb = rgb/rayContributions;
-
+    rgb /= RAY_COUNT;
     color = mix(previous, rgb, 1.0 / float(u_FrameIndex + 1));
 }
