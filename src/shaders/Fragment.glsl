@@ -3,7 +3,7 @@
 out vec3 color;
 
 #define RAY_COUNT 1
-#define FOG_DENSITY 0.02
+#define FOG_DENSITY 0.00
 #define FOG_HEIGHT 32.0
 #define AIR_REFRACT 1.0003
 #define MAX_STACK_SIZE 64
@@ -91,7 +91,7 @@ uniform Material u_Materials[MAX_MATERIALS_COUNT];
 uniform uint u_MaterialsCount;
 
 // skybox
-uniform samplerCube skybox;
+uniform samplerCube u_Skybox;
 
 uint Hash(uint x) {
     x ^= x >> 17;
@@ -404,7 +404,7 @@ vec3 RayColour(Ray ray, uint rayIterations, int iRayCountSeed, inout uint AABBit
            continue;
         }
         if(!hitAnything) {
-            vec3 skybox_texture = texture(skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
+            vec3 skybox_texture = texture(u_Skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
             return rayColour*skybox_texture;
         } 
         Material material = hitRecord.material;

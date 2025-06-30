@@ -12,6 +12,7 @@
 #include <limits.h>
 #include "BvhTree.h"
 #include "ObjectLoader.h"
+#include "TextureUnitManager.h"
 
 #define VIEWPORT_DISTANCE 1.0
 
@@ -165,9 +166,9 @@ class Scene {
             std::vector<float> trianglesVertexData = FlattenTrianglesVertices(triangles);
             std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(triangles);
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
-            SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", 3, GL_RGB32F);
-            SendDataAsTextureBuffer(trianglesMatIdxData, triangles.size(), "u_MaterialsIndex", 4, GL_R32I);
-            SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", 5, GL_RGBA32F);
+            SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", TextureUnitManager::getNewTextureUnit(), GL_RGB32F);
+            SendDataAsTextureBuffer(trianglesMatIdxData, triangles.size(), "u_MaterialsIndex", TextureUnitManager::getNewTextureUnit(), GL_R32I);
+            SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", TextureUnitManager::getNewTextureUnit(), GL_RGBA32F);
             SendSceneMaterials();
             
             std::cout << "triangles count: " << triangles.size() << std::endl;

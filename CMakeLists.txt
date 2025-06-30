@@ -4,10 +4,10 @@ project(ray_tracer VERSION 0.1.0)
 
 
 set(CMAKE_CXX_COMPILER "/usr/bin/g++") 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3") # Example for gprof
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O5")
 
 # Add the executable
-add_executable(ray_tracer src/Shader.cpp src/main.cpp)
+add_executable(ray_tracer src/Shader.cpp src/main.cpp src/TextureUnitManager.cpp)
 
 # Include directories
 target_include_directories(ray_tracer PRIVATE ./Include)

@@ -5,7 +5,7 @@ skybox_directory_path="./Textures/DaylightBox"
 object_paths="
 ../Objects/sponza-palace.off
 ../Objects/dragon.off
-../Objects/sharpsphere.off"
+../Objects/cube_light_W.txt"
 
 # ../Objects/sponza-palace.off
 # ../Objects/dragon.off

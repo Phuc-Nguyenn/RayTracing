@@ -15,6 +15,7 @@
 #include "VertexArray.h"
 #include "Shader.h"
 #include "Scene.h"
+#include "TextureUnitManager.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -23,7 +24,7 @@
 #define SCREEN_HEIGHT 900
 
 /* keys state array */
-bool keys[1024] = {false};
+bool keys[350] = {false};
 
 static Scene CreateScene(unsigned int shaderProgramId)
 {
@@ -35,7 +36,8 @@ static Scene CreateScene(unsigned int shaderProgramId)
     return scene;
 }
 
-static void LoadSkybox(unsigned int shaderProgramId, std::string skyBoxPath, unsigned int textureUnit) {
+// idk why dummy has to be there but there is runtime error if not
+static void LoadSkybox(unsigned int shaderProgramId, std::string skyBoxPath, bool dummy = false) {
     unsigned int skyboxTextureID;
     GLCALL(glGenTextures(1, &skyboxTextureID));
     GLCALL(glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTextureID));
@@ -74,12 +76,12 @@ static void LoadSkybox(unsigned int shaderProgramId, std::string skyBoxPath, uns
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
-    GLCALL(glActiveTexture(GL_TEXTURE0 + textureUnit)); // texture unit 1
+    GLCALL(glActiveTexture(GL_TEXTURE0 + TextureUnitManager::getNewTextureUnit())); // texture unit 1
     GLCALL(glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxTextureID));
-    GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "skybox"), 1)); // tell shader: skybox = texture unit 1
+    GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, "u_Skybox"), TextureUnitManager::getCurrentTextureUnit())); // tell shader: skybox = texture unit 1
 }
 
-static void LoadNoiseTexture(unsigned int shaderProgramId, std::string noiseTexturePath, std::string uniformName, unsigned int textureUnit)
+static void LoadNoiseTexture(unsigned int shaderProgramId, std::string noiseTexturePath, std::string uniformName)
 {
     unsigned int noiseTextureID;
     GLCALL(glGenTextures(1, &noiseTextureID));
@@ -94,9 +96,9 @@ static void LoadNoiseTexture(unsigned int shaderProgramId, std::string noiseText
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        GLCALL(glActiveTexture(GL_TEXTURE0 + textureUnit)); // activate the texture unit
+        GLCALL(glActiveTexture(GL_TEXTURE0 + TextureUnitManager::getNewTextureUnit())); // activate the texture unit
         GLCALL(glBindTexture(GL_TEXTURE_2D, noiseTextureID));
-        GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit)); // tell shader: u_Noise = texture unit
+        GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), TextureUnitManager::getCurrentTextureUnit())); // tell shader: u_Noise = texture unit
     }
     else
     {
@@ -151,10 +153,10 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     Scene scene = CreateScene(shaderProgramId);
 
     /** code for Skybox  */
-    LoadSkybox(shaderProgramId, skyBoxPath, 1);
+    LoadSkybox(shaderProgramId, skyBoxPath);
 
     /** rng noise textures */
-    LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise", 2);
+    LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbSmall.png", "u_RgbNoise");
 
     scene.LoadObjects(objectPaths);
 
@@ -163,6 +165,7 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     auto lastPollEvents = std::chrono::steady_clock::now();
     uint32_t secFrameCount = 0;
     uint32_t fps = 0;
+
     while (!glfwWindowShouldClose(window.get()))
     {
         auto now = std::chrono::steady_clock::now();
@@ -192,6 +195,7 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
         GLCALL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(Vector2f)));
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+        
         GLCALL(glBlitNamedFramebuffer(fbo, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST));
 
         glfwSwapBuffers(window.get());
