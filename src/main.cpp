@@ -160,14 +160,29 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
 
     scene.LoadObjects(objectPaths);
 
+    // bloom source
+    ShaderProgramSource bloomSource = ParseShader("./src/shaders/bloomVertex.glsl", "./src/shaders/bloomFragment.glsl");
+    unsigned int bloomProgramId = CreateShaderProgram(bloomSource.VertexSource, bloomSource.FragmentSource);
+    GLCALL(glUseProgram(bloomProgramId));
+    GLCALL(glUniform2i(glGetUniformLocation(bloomProgramId, "screenResolution"), SCREEN_WIDTH, SCREEN_HEIGHT));
+
+    unsigned int bloomImageTex;
+    GLCALL(glGenTextures(1, &bloomImageTex));  
+    GLCALL(glActiveTexture(GL_TEXTURE0 + TextureUnitManager::getNewTextureUnit()));        // create a colour buffer texture
+    GLCALL(glBindTexture(GL_TEXTURE_2D, bloomProgramId));                                  // bind the colour buffer texture to GL_TEXTURE_2D
+    GLCALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL)); // define the currently bound colour buffer texture
+    GLCALL(glUniform1i(glGetUniformLocation(bloomProgramId, "u_Image"), TextureUnitManager::getCurrentTextureUnit()));
+
+
+    // loop initialisation logic
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
     auto lastFpsCheck = std::chrono::steady_clock::now();
     auto lastPollEvents = std::chrono::steady_clock::now();
     uint32_t secFrameCount = 0;
     uint32_t fps = 0;
-
     while (!glfwWindowShouldClose(window.get()))
     {
+        GLCALL(glUseProgram(shaderProgramId));
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFpsCheck).count() > 1000)
         {
@@ -194,9 +209,12 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
         // Render raytrace to framebuffer
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
         GLCALL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(Vector2f)));
-        GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
         
-        GLCALL(glBlitNamedFramebuffer(fbo, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST));
+        GLCALL(glBlitNamedFramebuffer(fbo, bloomImageTex, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GL_COLOR_BUFFER_BIT, GL_NEAREST));
+
+        GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+        glUseProgram(bloomProgramId);
+        GLCALL(glDrawArrays(GL_TRIANGLES, 0, sizeof(vertices) / sizeof(Vector2f)));
 
         glfwSwapBuffers(window.get());
         secFrameCount++;
