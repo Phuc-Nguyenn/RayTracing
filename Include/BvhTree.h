@@ -175,8 +175,8 @@ private:
     };
 
 public:
-    BvhTree() : maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
-    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES) : triangles(std::move(triangles)), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0) {}
+    BvhTree() : maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES) {}
+    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES) : triangles(std::move(triangles)), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
 
     void SetTriangles(std::vector<Tri> newTriangles) {
         

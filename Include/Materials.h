@@ -44,7 +44,7 @@ struct Transparent : Material {
 };
 
 struct LightSource : Material {
-    LightSource(Vector3f colour) : Material(std::move(colour), Vector3f(1.0, 1.0, 1.0), 0.0, 0.0, 0.0, 0.0, true) {
+    LightSource(Vector3f colour, float luminescent = 1) : Material(std::move(colour), Vector3f(1.0, 1.0, 1.0), 0.0, 0.0, luminescent, 0.0, true) {
     }
 };
 }; // namespace Material

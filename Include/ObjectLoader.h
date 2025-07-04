@@ -114,7 +114,9 @@ public:
                 status = bool(vtxStream >> transparency >> refractionIndex);
                 if(status) material = std::make_unique<Material::Transparent>(color, transparency, refractionIndex);
             } else if(materialType == "lightsource") {
-                if(status) material = std::make_unique<Material::LightSource>(color);
+                float luminescent = 1.0;
+                status = bool(vtxStream >> luminescent);
+                if(status) material = std::make_unique<Material::LightSource>(color, luminescent);
             } else {
                 std::cout << "unknown material type: " << materialType << std::endl;
                 return {};

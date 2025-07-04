@@ -1,3 +1,9 @@
+
+#images
+*.png
+*.jpg
+*.jpeg
+
 # Compiled object files
 *.o
 *.obj
