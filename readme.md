@@ -1,3 +1,6 @@
+![image](https://github.com/user-attachments/assets/fc6836eb-7d35-49ea-a99b-96536ae3ff24)
+
+
 ## Installation
 
 To set up the required dependencies for this project, install the following libraries:
@@ -30,3 +33,13 @@ Use the following controls to interact with the application:
 - **Space**: Ascend vertically.
 - hold **Left Shift**: speed up movement
 - **Esc**: Exit the application.
+
+## View Mode Controls
+- **~**: view bounding boxes
+- **num1**: view normals
+- **num2**: 2 max ray bounces
+- **num3**: 4 max ray bounces
+- **num4**: 8 max ray bounces
+- **num5**: 16 max ray bounces
+- **num6**: 32 max ray bounces
+
