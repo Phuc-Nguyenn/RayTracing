@@ -1,4 +1,9 @@
 ![image](https://github.com/user-attachments/assets/fc6836eb-7d35-49ea-a99b-96536ae3ff24)
+## Features
+- fast progressive rendering
+- bounding volume heirachy data structure to speed up ray intersection tests
+- post processing bloom
+- materials: glass, specular, metallic, lambertian
 
 
 ## Installation
