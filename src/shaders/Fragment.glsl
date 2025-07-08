@@ -1,8 +1,8 @@
-#version 420 core
+#version 430 core
 
 out vec3 color;
 
-#define RAY_COUNT 5
+#define RAY_COUNT 3
 #define FOG_DENSITY 0.00
 #define FOG_HEIGHT 32.0
 #define AIR_REFRACT 1.0003
@@ -39,9 +39,12 @@ struct Triangle {
     vec3 position;
     vec3 position2;
     vec3 position3;
-    int materialIndex;
 };
 
+layout(std430, binding = 0) buffer B_Triangles
+{
+    Triangle trianglesBuffer[];
+};
 
 struct BoundingBox {
     vec3 maxi;
@@ -50,8 +53,6 @@ struct BoundingBox {
     int triangleStartIndex;
     int rightChildIndex;
 };
-
-
 
 struct Camera {
     vec3 position;
@@ -81,9 +82,7 @@ uniform sampler2D u_Accumulation;
 uniform sampler2D u_RgbNoise;
 uniform vec2 u_RgbNoiseResolution;
 
-uniform samplerBuffer u_Triangles; // rgb32f
 uniform isamplerBuffer  u_MaterialsIndex; // int
-uniform uint u_TrianglesCount;
 
 uniform samplerBuffer u_BoundingBoxes; // r32f
 uniform uint u_BoundingBoxesCount;
@@ -115,7 +114,7 @@ struct HitRecord {
     float t;
     bool frontFace;
     bool hitAnything;
-    int materialIndex;
+    int index;
     Material material;
 };
 
@@ -185,18 +184,12 @@ bool hitSphere(Sphere sphere, Ray r, inout HitRecord hitRecord) {
     hitRecord.hitPoint = RayAt(r, hitRecord.t);
     vec3 outwardNormal = (hitRecord.hitPoint - center) / radius;
     SetFaceNormal(hitRecord, r, outwardNormal);
-    hitRecord.materialIndex = -1;
+    hitRecord.index = -1;
     return true;
 };
 
 Triangle getTriangle(int index) {
-    Triangle triangle;
-    int bufferIndex = index * 3;
-    triangle.position = texelFetch(u_Triangles, bufferIndex + 0).xyz;
-    triangle.position2 = texelFetch(u_Triangles, bufferIndex + 1).xyz;
-    triangle.position3 = texelFetch(u_Triangles, bufferIndex + 2).xyz;
-    triangle.materialIndex = texelFetch(u_MaterialsIndex, index).r;
-    return triangle;
+    return trianglesBuffer[index];
 }
 
 BoundingBox getBoundingBox(int index) {
@@ -243,7 +236,6 @@ bool hitTriangle(inout Triangle triangle, Ray r, inout HitRecord hitrecord) {
     hitrecord.hitPoint = RayAt(r, t);
     vec3 normal = normalize(cross(e1, e2));
     SetFaceNormal(hitrecord, r, normal);
-    hitrecord.materialIndex = triangle.materialIndex;
     return true;
 }
 
@@ -261,11 +253,11 @@ bool hitBoundingBox(const Ray ray, const BoundingBox aabb, out HitRecord hitReco
     hitRecord.t = tmin;
 
     // Find which axis was hit for the normal
-    vec3 normal = vec3(0.0);
-    if (tmin == tsmaller.x) normal = vec3(-sign(ray.direction.x), 0.0, 0.0);
-    else if (tmin == tsmaller.y) normal = vec3(0.0, -sign(ray.direction.y), 0.0);
-    else if (tmin == tsmaller.z) normal = vec3(0.0, 0.0, -sign(ray.direction.z));
-    hitRecord.normal = normal;
+    // vec3 normal = vec3(0.0);
+    // if (tmin == tsmaller.x) normal = vec3(-sign(ray.direction.x), 0.0, 0.0);
+    // else if (tmin == tsmaller.y) normal = vec3(0.0, -sign(ray.direction.y), 0.0);
+    // else if (tmin == tsmaller.z) normal = vec3(0.0, 0.0, -sign(ray.direction.z));
+    // hitRecord.normal = normal;
 
     return hitRecord.hitAnything;
 }
@@ -275,7 +267,7 @@ uniform bool u_ViewBoxHits;
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
     hitRecord.hitAnything = false;
-    hitRecord.materialIndex = -1;
+    hitRecord.index = -1;
 
     int stack[MAX_STACK_SIZE];
     int stackptr = 0;
@@ -297,7 +289,8 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
                 if(hitTriangle(triangle, ray, hitRecordTmp)) {
                     if(hitRecord.t > hitRecordTmp.t) {
                         hitRecord = hitRecordTmp;
-                        hitRecord.material = u_Materials[triangle.materialIndex];
+                        hitRecord.index = i;
+                        hitRecord.material = u_Materials[texelFetch(u_MaterialsIndex, i).x];
                         hitRecord.hitAnything = true;  
                     }
                 }
@@ -386,7 +379,7 @@ bool VolumetricScatter(inout HitRecord hitRecord, inout Ray ray, inout vec3 colo
     return scattered;
 }
 
-vec3 RayColour(Ray ray,vec3 lastColour, int iRayCountSeed) {
+vec3 RayColour(Ray ray, vec3 lastColour, out vec3 albedo, out vec3 normal, int iRayCountSeed) {
     HitRecord hitRecord;
     vec3 rayColour = vec3(1.0);
     const float maxFogTravel = 1.0/FOG_DENSITY;
@@ -406,6 +399,17 @@ vec3 RayColour(Ray ray,vec3 lastColour, int iRayCountSeed) {
         if (VolumetricScatter(hitRecord, ray, rayColour, seed-vec2(0.31), maxFogTravel)) {
            continue;
         }
+
+        // do the albedo
+        if(i == 0) {
+            if(hitAnything) {
+                albedo = hitRecord.material.colour;
+                normal = hitRecord.normal;
+            } else {
+                albedo = texture(u_Skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb; 
+            }
+        }
+
         if(!hitAnything) {
             vec3 skybox_texture = texture(u_Skybox, RotateAroundAxis(ray.direction, vec3(1,0,0), -3.1415/2)).rgb;
             return rayColour*skybox_texture;
@@ -430,6 +434,7 @@ vec3 RayColour(Ray ray,vec3 lastColour, int iRayCountSeed) {
             rayColour *= isSpecular ? mix(material.specularColour, material.colour, material.metallic) : material.colour;
         }
         ray = MakeRay(hitRecord.hitPoint + 1e-4 * nextDirection, nextDirection, 1);
+        
         vec3 diff = abs(rayColour - lastColour);
         float distance = diff.x + diff.y + diff.z;
         int inc = int(clamp(u_BounceLimit/4, 0, u_BounceLimit));
@@ -452,20 +457,22 @@ void main()
     vec2 uv = gl_FragCoord.xy / screenResolution;
     vec3 previous = texture(u_Accumulation, uv).rgb;
     int iterationsDid = 0;
+    vec3 albedo = vec3(0.0);
+    vec3 normals = vec3(0.0);
     for(int i=0; i<RAY_COUNT; ++i)
     { 
         vec2 randOffset = texture(u_RgbNoise, u_RandSeed.yz + vec2(0.007*i)).xy;
         Ray initialRay = MakeRay(u_Camera.position, directionToViewport(randOffset), 1.0);
-        vec3 newRgb = RayColour(initialRay, previous, i);
+        
+        vec3 albedoTmp;
+        vec3 newRgb = RayColour(initialRay, previous, albedoTmp, normals, i);
+        
         vec3 diff = abs(rgb - newRgb);
         float distance = diff.x + diff.y + diff.z;
         if(i > 0) {
-            // if(distance < 1) {
-            //     i += 1;
-            // }
-            // if(distance < 0.5) {
-            //     i += 1;
-            // }
+            if(distance < 0.5) {
+                i += 1;
+            }
             if(distance < 0.2) {
                 i += 1;
             }
@@ -474,8 +481,11 @@ void main()
             }
         }
         rgb += newRgb;
+        albedo += albedoTmp;
         iterationsDid++;
     }
-    rgb /= iterationsDid;
+    float iInv = 1.0 / iterationsDid;
+    rgb *= iInv;
+    albedo *= iInv;
     color = mix(previous, rgb, 1.0 / float(u_FrameIndex + 1));
 }

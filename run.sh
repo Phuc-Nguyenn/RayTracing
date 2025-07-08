@@ -3,7 +3,6 @@ vertex_glsl_path="./src/shaders/Vertex.glsl"
 fragment_glsl_path="./src/shaders/Fragment.glsl"
 skybox_directory_path="./Textures/DaylightBox"
 object_paths="
-../Objects/sponza.off
 ../Objects/dragon.off
 ../Objects/glassDragon.off
 ../Objects/cube_light_R.txt
@@ -13,7 +12,18 @@ object_paths="
 ../Objects/teapot3.txt
 ../Objects/bunny70k.off
 ../Objects/monkey.off
+../Objects/sponza.off
 "
+
+# ../Objects/dragon.off
+# ../Objects/glassDragon.off
+# ../Objects/cube_light_R.txt
+# ../Objects/cube_light_G.txt
+# ../Objects/cube_light_B.txt
+# ../Objects/cube_light_W.txt
+# ../Objects/teapot3.txt
+# ../Objects/bunny70k.off
+# ../Objects/monkey.off
 
 # ../Objects/sponza.off
 # ../Objects/dragon.off

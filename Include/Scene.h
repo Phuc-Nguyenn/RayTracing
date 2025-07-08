@@ -103,20 +103,23 @@ class Scene {
 
         std::vector<float> FlattenTrianglesVertices(const std::vector<Tri>& reorderedTris) {
             std::vector<float> flattened;
-            flattened.reserve(reorderedTris.size() * 9);
+            flattened.reserve(reorderedTris.size() * 12);
             for (const auto& tri : reorderedTris) {
                 // pos1
                 flattened.push_back(tri.pos1.x);
                 flattened.push_back(tri.pos1.y);
                 flattened.push_back(tri.pos1.z);
+                flattened.push_back(0); // padding
                 // pos2
                 flattened.push_back(tri.pos2.x);
                 flattened.push_back(tri.pos2.y);
                 flattened.push_back(tri.pos2.z);
+                flattened.push_back(0); // padding
                 // pos3
                 flattened.push_back(tri.pos3.x);
                 flattened.push_back(tri.pos3.y);
                 flattened.push_back(tri.pos3.z);
+                flattened.push_back(0); // padding
             }
             return flattened;
         }
@@ -178,7 +181,8 @@ class Scene {
             std::vector<float> trianglesVertexData = FlattenTrianglesVertices(triangles);
             std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(triangles);
             std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
-            SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", TextureUnitManager::getNewTextureUnit(), GL_RGB32F);
+            // SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", TextureUnitManager::getNewTextureUnit(), GL_RGB32F);
+            SendDataAsSSBO(trianglesVertexData, 0, GL_STATIC_DRAW);
             SendDataAsTextureBuffer(trianglesMatIdxData, triangles.size(), "u_MaterialsIndex", TextureUnitManager::getNewTextureUnit(), GL_R32I);
             SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", TextureUnitManager::getNewTextureUnit(), GL_RGBA32F);
             SendSceneMaterials();
@@ -186,6 +190,22 @@ class Scene {
             std::cout << "triangles count: " << triangles.size() << std::endl;
             std::cout << "floats count: " << trianglesVertexData.size() << std::endl;
         }
+
+        template<typename T>
+        void SendDataAsSSBO(const std::vector<T>& data, const int bufferUnit, const GLenum usageType) {
+            if(data.empty()) {
+                std::cerr << " Warning: Empty data vector for buffer unit " << bufferUnit << std::endl;
+                return;
+            }
+
+            GLuint ssbo;
+            glGenBuffers(1, &ssbo);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, data.size() * sizeof(T), data.data(), usageType);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, bufferUnit, ssbo);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        }
+
 
         template<typename T>
         void SendDataAsTextureBuffer(const std::vector<T>& data, const int count, const std::string& uniformName, const int textureUnit, const unsigned int format) {
@@ -207,6 +227,7 @@ class Scene {
 
             GLCALL(glUniform1i(glGetUniformLocation(shaderProgramId, uniformName.c_str()), textureUnit));
             GLCALL(glUniform1ui(glGetUniformLocation(shaderProgramId, (uniformName + "Count").c_str()), count));
+            glBindBuffer(GL_TEXTURE_BUFFER, 0);
         }
 
         void SendSceneMaterials() {
