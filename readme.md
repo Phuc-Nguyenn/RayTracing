@@ -4,6 +4,7 @@
 - bounding volume heirachy data structure to speed up ray intersection tests
 - post processing bloom
 - materials: glass, specular, metallic, lambertian
+- record camera movements, render, and create a high quality video
 
 
 ## Installation
@@ -47,4 +48,8 @@ Use the following controls to interact with the application:
 - **num4**: 8 max ray bounces
 - **num5**: 16 max ray bounces
 - **num6**: 32 max ray bounces
+
+## Recording Controls
+- **R**: toggle recording on/off
+- **P**: play/ start rendering the recording
 
