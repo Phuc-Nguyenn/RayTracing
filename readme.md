@@ -53,3 +53,7 @@ Use the following controls to interact with the application:
 - **R**: toggle recording on/off
 - **P**: play/ start rendering the recording
 
+## More Captures:
+![image](https://github.com/user-attachments/assets/8bbec4fa-34c2-464c-8702-77ffb24d3563)
+![image](https://github.com/user-attachments/assets/32d3fa2b-7e7a-4ac1-9689-d586de251fe0)
+
