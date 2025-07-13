@@ -8,6 +8,7 @@
 #include <memory>
 #include <chrono>
 #include <cstdlib>
+#include <queue>
 
 #include "Renderer.h"
 #include "VertexBuffer.h"
@@ -16,12 +17,13 @@
 #include "Shader.h"
 #include "Scene.h"
 #include "TextureUnitManager.h"
-#include <queue>
+#include "KeyEventNotifier.h"
+#include "ConfigParser.hpp"
+#include "FpsPrinter.h"
+#include "Recorder.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
 
 #define SCREEN_WIDTH 1600
 #define SCREEN_HEIGHT 900
@@ -37,7 +39,6 @@ static Scene CreateScene(std::vector<unsigned int> shaderProgramIds)
     glUniform2f(screenResolutionUniformLocation, SCREEN_WIDTH, SCREEN_HEIGHT);
     
     Scene scene(std::move(shaderProgramIds));
-    scene.SetCamera({{-8.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, 120.0f});
     return scene;
 }
 
@@ -112,19 +113,6 @@ static void LoadNoiseTexture(unsigned int shaderProgramId, std::string noiseText
     stbi_image_free(data);
 }
 
-static int imageOutCounter = 0;
-static void WriteTexture(unsigned int tmpTexture) {
-    int numChannels = 3;
-    size_t imageSize = SCREEN_WIDTH * SCREEN_HEIGHT * numChannels;
-    std::vector<unsigned char> image(imageSize);
-    glBindTexture(GL_TEXTURE_2D, tmpTexture);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, image.data());
-    std::string filename = "shots/raytrace-out-" + std::to_string(imageOutCounter++) + ".png";
-    stbi_write_png(filename.c_str(), SCREEN_WIDTH, SCREEN_HEIGHT, numChannels, image.data(), SCREEN_WIDTH * numChannels);
-    std::cout << "successfully wrote " << filename << std::endl;
-    keys[GLFW_KEY_I] = false;
-}
-
 static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window,
                         const std::string &vertexShaderPath,
                         const std::string &fragmentShaderPath,
@@ -165,7 +153,6 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     GLCALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL)); // define the currently bound colour buffer texture
     int accumLocation = glGetUniformLocation(shaderProgramId, "u_Accumulation");
     GLCALL(glUniform1i(accumLocation, 0)); // Bind to texture unit 0
-
     GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
     GLCALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
     GLCALL(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorBufferTex, 0)); // attach the texture to the framebuffer
@@ -193,10 +180,9 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
 
     scene.LoadObjects(objectPaths);
 
-
-    int bufferTextureCount = 4;
+    std::vector<int> downSamplingAmounts = {5,10,20,40,80,160}; // must be the same count as buffer texture count
+    int bufferTextureCount = downSamplingAmounts.size();
     std::vector<std::vector<unsigned int>> bufferTextures(bufferTextureCount, std::vector<unsigned int>(3)); // <bufferId><textureId><textureUnit>
-    std::vector<int> downSamplingAmounts = {10, 20, 40, 80}; // must be the same count as buffer texture count
     ASSERT(downSamplingAmounts.size() == bufferTextureCount);
 
     // Create and bind a second (larger) framebuffer for denoising if not already created
@@ -232,73 +218,17 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
 
     // loop initialisation logic
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
-    auto lastFpsCheck = std::chrono::steady_clock::now();
-    auto lastPollEvents = std::chrono::steady_clock::now();
-    auto lastCapturedFrame = std::chrono::steady_clock::now();
-    uint32_t secFrameCount = 0;
-    uint32_t fps = 0;
-    int imageOutCounter = 0;
-    bool isRecordingCamPos = false;
-    bool isPlayingBack = false;
-    std::queue<std::pair<Vector3f, Vector3f>> RecordCamData;
+
+    Recorder recorder(scene.GetCamera(), tmpTexture, SCREEN_WIDTH, SCREEN_HEIGHT);
+    FpsPrinter fpsPrinter;
     while (!glfwWindowShouldClose(window.get()))
     {
         GLCALL(glUseProgram(shaderProgramId));
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFpsCheck).count() > 1000)
-        {
-            lastFpsCheck = now;
-            fps = secFrameCount;
-            Vector3f cameraPosition = scene.GetCameraPosition();
-            std::cout << "fps: " << fps << ", total_frames: " << scene.GetFrameIndex();
-            std::cout << ",\t camera position: " << cameraPosition.x << " " << cameraPosition.y << " " << cameraPosition.z << std::endl;
-            secFrameCount = 0;
-        }
-        if(isPlayingBack && std::chrono::duration_cast<std::chrono::milliseconds>(now - lastCapturedFrame).count() > TIME_PER_FRAME_MS) {
-            lastCapturedFrame = now;
-            WriteTexture(tmpTexture);
-            if(RecordCamData.empty()) {
-                isPlayingBack = false;
-            } else {
-                Vector3f nextpos = RecordCamData.front().first;
-                Vector3f nextdir = RecordCamData.front().second;
-                RecordCamData.pop();
-                scene.SetCamera(Camera(nextpos, nextdir, scene.camera.fov));
-                scene.ResetFrameIndex();
-                GLCALL(glClear(GL_COLOR_BUFFER_BIT));
-            }
-        }
-        if(std::chrono::duration_cast<std::chrono::milliseconds>(now - lastPollEvents).count() > 10)
-        {
-            lastPollEvents = now;
-            glfwPollEvents();
-            scene.SetCurrentFps(fps);
-            bool cameraMoved = scene.HandleCameraMovement(keys);
-            if (cameraMoved)
-            {
-                scene.ResetFrameIndex();
-                GLCALL(glClear(GL_COLOR_BUFFER_BIT));
-            }
-            if(keys[GLFW_KEY_R]) {
-                if(isRecordingCamPos) {
-                    std::cout << "stopped recording" << std::endl;
-                    isRecordingCamPos = false;
-                } else {
-                    std::cout << "started recording" << std::endl;
-                    RecordCamData = {};
-                    isRecordingCamPos = true;
-                }
-                keys[GLFW_KEY_R] = false;
-            }
-            if(isRecordingCamPos) {
-                RecordCamData.push({scene.camera.position, scene.camera.facing});
-            }
-            if(keys[GLFW_KEY_P]) {
-                isPlayingBack = true;
-                keys[GLFW_KEY_P] = false;
-            }
-        }
-        scene.Finalise();
+        glfwPollEvents();
+        recorder.Tick();
+        fpsPrinter.Tick();
+        scene.Tick();
+
         // Render raytrace to framebuffer
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
         GLCALL(glDrawArrays(GL_TRIANGLES, 0, 6));
@@ -347,7 +277,6 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
         }   
 
         glfwSwapBuffers(window.get());
-        secFrameCount++;
     }
     GLCALL(glDeleteProgram(shaderProgramId));
     glDisableVertexAttribArray(0);
@@ -360,63 +289,82 @@ static void error_callback(int error, const char *description)
 
 static void key_callback(GLFWwindow *window, const int key, const int, const int action, const int)
 {
-    if (action == GLFW_RELEASE && key == GLFW_KEY_ESCAPE)
+    if (action == GLFW_RELEASE && key == GLFW_KEY_ESCAPE) {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
-    if (key >= 0 && key < 1024)
-    {
-        if (action == GLFW_PRESS)
-            keys[key] = true;
-        else if (action == GLFW_RELEASE)
-            keys[key] = false;
+        return;
     }
+    KeyEventNotifier::GetSingleton().notify(KeyEvent(key, action));
 }
 
-int main(int argc, char **argv)
-{
-    if (argc < 4)
-    {
-        std::cerr << "Usage: " << argv[0] << " <absolute_path_prefix> <rel_vertex_shader_path> <rel_fragment_shader_path> <rel_skybox_path> [<object_path_1>]" << std::endl;
-        return EXIT_FAILURE;
-    }
-    std::string vertexShaderPath = argv[1];
-    std::string fragmentShaderPath = argv[2];
-    std::string skyboxPath = argv[3];
-    std::vector<std::string> objectPaths;
-    for(int i=4; i < argc; ++i) {
-        objectPaths.push_back(argv[i]);
-    }
-
-    glfwSetErrorCallback(error_callback);
-    if (!glfwInit())
-    {
-        return EXIT_FAILURE;
-    }
-
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window(
-        glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Hello World", NULL, NULL), glfwDestroyWindow);
-    if (!window)
-    {
-        glfwTerminate();
-        return EXIT_FAILURE;
-    }
-    glfwMakeContextCurrent(window.get());
-
-    glfwSwapInterval(1);
-    glfwSetKeyCallback(window.get(), key_callback);
-
+bool InitialiseGlew() {
     GLenum err = glewInit();
     if (err != GLEW_OK)
     {
         std::cerr << "[GLEW Error] (" << glewGetErrorString(err) << ")" << std::endl;
         glfwTerminate();
-        return EXIT_FAILURE;
+        return false;
+    }
+    return true;
+}
+#include <functional>
+
+bool InitialiseGLFW(GLFWerrorfun errorCallbackFunc) {
+    glfwSetErrorCallback(errorCallbackFunc);
+    if (!glfwInit())
+    {
+        return false;
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    return true;
+}
+
+std::unique_ptr<GLFWwindow, void(*)(GLFWwindow*)> GLFWWindowFactory(unsigned int width, unsigned int height, std::string title, GLFWkeyfun keyCallbackFunc) {
+    GLFWwindow* rawWindow = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
+    if (!rawWindow) {
+        std::cerr << "Failed to create GLFW window\n";
+        glfwTerminate();
+        return {nullptr, glfwDestroyWindow};
     }
 
-    RenderScene(std::move(window), vertexShaderPath, fragmentShaderPath, skyboxPath, objectPaths);
+    glfwMakeContextCurrent(rawWindow);
+    glfwSwapInterval(1);
+    glfwSetKeyCallback(rawWindow, keyCallbackFunc);
 
-    return 0;
+    return std::unique_ptr<GLFWwindow, void(*)(GLFWwindow*)>(rawWindow, glfwDestroyWindow);
+}
+
+
+int main(int argc, char **argv)
+{
+    std::string ConfigPath = "RayTracer.ini";
+    ConfigParser parser = ConfigParser(ConfigPath);
+
+    std::string vertexShaderPath = parser.aConfig<std::string>("ShaderPaths", "TracerVert");
+    std::string fragmentShaderPath = parser.aConfig<std::string>("ShaderPaths", "TracerFrag");
+    std::string skyboxPath = parser.aConfig<std::string>("SkyBox", "Path");
+    std::string objectDir = parser.aConfig<std::string>("Objects", "DirectoryPath");
+    std::vector<std::string> objects = parser.aConfigVec<std::string>("Objects", "Filenames");
+    for(auto& s : objects) {
+        s = objectDir + "/" + s;
+    }
+
+    if(!InitialiseGLFW(error_callback)) {
+        std::cerr << "failed to initialise GLFW" << std::endl;
+        return EXIT_FAILURE;
+    }
+    std::string windowTitle = "ray tracing program";
+    auto window = GLFWWindowFactory(SCREEN_WIDTH, SCREEN_HEIGHT, windowTitle, key_callback);
+    if(!window) {
+        std::cerr << "failed to initialise GLFW window" << std::endl;
+        return EXIT_FAILURE;
+    }
+    if(!InitialiseGlew()) {
+        std::cerr << "failed to initialise Glew" << std::endl;
+        return EXIT_FAILURE;
+    };
+    RenderScene(std::move(window), vertexShaderPath, fragmentShaderPath, skyboxPath, objects);
+
+    return EXIT_SUCCESS;
 }

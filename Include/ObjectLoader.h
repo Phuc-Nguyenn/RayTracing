@@ -4,7 +4,7 @@
 #include <fstream>
 #include <optional>
 
-#include "Shape.h"
+#include "Tri.h"
 #include "Materials.h"
 #include "Math3D.h"
 
@@ -20,24 +20,6 @@ protected:
     Vector3f position;
     std::fstream vtxStream;
     std::string format;
-
-public:
-    ObjectLoader() : position(Vector3f(0,0,0)), scale(1), format("xyz") {
-    }
-
-    bool TargetFile(const std::string& filePath) {
-        targetFilePath = filePath;
-        position = Vector3f(0,0,0);
-        scale = 1;
-        myMaterialIndex = -1;
-        vtxStream.close();
-        vtxStream.open(targetFilePath);
-        if (!vtxStream.is_open()) {
-            std::cerr << "Failed to open file: " << targetFilePath << std::endl;
-            return false;
-        }
-        return true;
-    }
 
     bool handlePositionArg() {
         if(!(vtxStream >> position.x >> position.z >> position.y)) {
@@ -65,6 +47,23 @@ public:
         return true;
     }
 
+public:
+    ObjectLoader() : position(Vector3f(0,0,0)), scale(1), format("xyz") {
+    }
+
+    bool TargetFile(const std::string& filePath) {
+        targetFilePath = filePath;
+        position = Vector3f(0,0,0);
+        scale = 1;
+        myMaterialIndex = -1;
+        vtxStream.close();
+        vtxStream.open(targetFilePath);
+        if (!vtxStream.is_open()) {
+            std::cerr << "Failed to open file: " << targetFilePath << std::endl;
+            return false;
+        }
+        return true;
+    }
 
     virtual std::optional<Material::Material> ExtractMaterial() {
         // Read in position and material from object file
@@ -155,8 +154,6 @@ public:
         return {triangles};
     };
 };
-
-int ObjectLoader::materialsLoaded = 0;
 
 class OFFLoader : public ObjectLoader
 {

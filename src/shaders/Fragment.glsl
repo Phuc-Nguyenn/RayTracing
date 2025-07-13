@@ -2,7 +2,7 @@
 
 out vec3 color;
 
-#define RAY_COUNT 3
+#define RAY_COUNT 1
 #define FOG_DENSITY 0.00
 #define FOG_HEIGHT 32.0
 #define AIR_REFRACT 1.0003
@@ -262,8 +262,6 @@ bool hitBoundingBox(const Ray ray, const BoundingBox aabb, out HitRecord hitReco
     return hitRecord.hitAnything;
 }
 
-uniform bool u_ViewBoxHits;
-
 bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
     hitRecord.t = INF;
     hitRecord.hitAnything = false;
@@ -313,7 +311,7 @@ bool HitHittableList(Ray ray, inout HitRecord hitRecord) {
         }
     }
     // Color is white if iterationsCount is below threshold, otherwise gets more red as iterationsCount increases
-    if (u_ViewBoxHits) {
+    if (u_BounceLimit == 0) {
         int threshold1 = 64;
         int threshold2 = 128;
         if (iterationsCount < threshold1) {
@@ -385,11 +383,10 @@ vec3 RayColour(Ray ray, vec3 lastColour, out vec3 albedo, out vec3 normal, int i
     const float maxFogTravel = 1.0/FOG_DENSITY;
     for(int i=0; i<=u_BounceLimit; ++i) {
         bool hitAnything = HitHittableList(ray, hitRecord);
-        if (u_ViewBoxHits) {
+        if (u_BounceLimit == 0)
             return vec3(hitRecord.material.colour);
-        } else if (u_BounceLimit == 1) {
+        if (u_BounceLimit == 1)
             return vec3(abs(hitRecord.normal));
-        }
 
         vec2 seed = mod(vec2(
             Hashf(ray.origin.x + ray.direction.y) + Hash(i) + Hash(iRayCountSeed) + Hash(u_FrameIndex) + Hashf(u_RandSeed.x * u_BounceLimit),
