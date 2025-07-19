@@ -2,6 +2,12 @@
 #include "Scene.h"
 #include "Renderer.h"
 
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include <functional>
+
+#define PI_ON_180 0.01745329251994329576923690768489
+
 Camera::Camera(Scene& scene) : 
     position(DEFAULT_POSITION), 
     facing(DEFAULT_FACING), 
@@ -26,7 +32,7 @@ float Camera::GetFov() const{
 }
 
 float Camera::GetViewportWidth() const{
-    return fov;
+    return viewportWidth;
 }
 
 float Camera::GetViewportDistance() const{
@@ -54,7 +60,7 @@ void Camera::SetViewportDistance(float newViewportDistance) {
 }
 //helpers
 double Camera::degreesToRadians(double degrees) {
-    return degrees * M_PI / 180.0;
+    return degrees * PI_ON_180;
 }
 
 Vector3f Camera::RotateAroundAxis(const Vector3f& v, const Vector3f& k, float a) {
@@ -64,8 +70,8 @@ Vector3f Camera::RotateAroundAxis(const Vector3f& v, const Vector3f& k, float a)
     return result;
 }
 
-void Camera::SetFOV(float fov) {
-    this->fov = degreesToRadians(fov);
+void Camera::SetFOV(float degrees) {
+    this->fov = degreesToRadians(degrees);
     viewportWidth = 2.0 * viewportDistance * tan(this->fov / 2.0);
 };
 
@@ -110,7 +116,7 @@ void Camera::Tick(float cameraSpeed, float rotationSpeed) {
     // zoom
     if(keys[GLFW_KEY_C])
         SetFOV(ZOOM_FOV_DEGREES);
-    else if(fov == ZOOM_FOV_DEGREES)
+    else
         SetFOV(DEFAULT_FOV_DEGREES);
 
     bool cameraMoved = !(cameraInitialFacing == facing) || !(cameraInitialPosition == position) || !(cameraInitialFOV == fov);

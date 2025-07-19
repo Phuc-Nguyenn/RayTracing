@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.27)
 
 project(ray_tracer VERSION 0.1.0)
 
+find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
+find_package(glfw3 REQUIRED)
 
 set(CMAKE_CXX_COMPILER "/usr/bin/g++") 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O5")
@@ -25,6 +28,6 @@ src/ConfigParser/ConfigParser.cpp)
 target_include_directories(ray_tracer PRIVATE ./Include ./Include/ConfigParser ./Include/StbImage)
 
 # Add the glfw subdirectory and link it as a dependency
-target_link_libraries(ray_tracer PRIVATE glfw GL GLEW)
+target_link_libraries(ray_tracer PRIVATE glfw OpenGL GLEW)
 
 

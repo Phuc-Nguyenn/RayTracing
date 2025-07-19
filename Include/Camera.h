@@ -2,15 +2,12 @@
 
 #include "Math3D.h"
 #include "KeyEventObserver.h"
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <functional>
 
 // camera setting macros
 #define VIEWPORT_DISTANCE 1.0
 #define DEFAULT_POSITION {0,0,0}
 #define DEFAULT_FACING {1,0,0}
-#define DEFAULT_FOV_DEGREES 150
+#define DEFAULT_FOV_DEGREES 120
 #define ZOOM_FOV_DEGREES 90
 #define GLFW_KEY_COUNT 350
 
@@ -58,7 +55,7 @@ public:
 
     void SetFacing(Vector3f newFacing);
 
-    void SetFov(float newFov);
+    void SetFov(float degrees);
 
     void SetViewportWidth(float newViewportWidth);
 
