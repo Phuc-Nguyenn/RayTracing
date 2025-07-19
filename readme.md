@@ -1,3 +1,12 @@
+![image](https://github.com/user-attachments/assets/fc6836eb-7d35-49ea-a99b-96536ae3ff24)
+## Features
+- fast progressive rendering
+- bounding volume heirachy data structure to speed up ray intersection tests
+- post processing bloom
+- materials: glass, specular, metallic, lambertian
+- record camera movements, render, and create a high quality video
+
+
 ## Installation
 
 To set up the required dependencies for this project, install the following libraries:
@@ -30,3 +39,21 @@ Use the following controls to interact with the application:
 - **Space**: Ascend vertically.
 - hold **Left Shift**: speed up movement
 - **Esc**: Exit the application.
+
+## View Mode Controls
+- **~**: view bounding boxes
+- **num1**: view normals
+- **num2**: 2 max ray bounces
+- **num3**: 4 max ray bounces
+- **num4**: 8 max ray bounces
+- **num5**: 16 max ray bounces
+- **num6**: 32 max ray bounces
+
+## Recording Controls
+- **R**: toggle recording on/off
+- **P**: play/ start rendering the recording
+
+## More Captures:
+![image](https://github.com/user-attachments/assets/8bbec4fa-34c2-464c-8702-77ffb24d3563)
+![image](https://github.com/user-attachments/assets/32d3fa2b-7e7a-4ac1-9689-d586de251fe0)
+
