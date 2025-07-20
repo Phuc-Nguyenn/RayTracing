@@ -44,7 +44,7 @@ private:
     int maxTrianglesPerLeaf; // configurable threshold for when to stop subdividing
     unsigned long int numberOfsplitsTotal;
     unsigned long int numberOfDegenerateSplits;
-    unsigned int threadCount;
+    unsigned int maxThreadCount;
     unsigned int threadCreationThreshold;
 
     enum Dimension {

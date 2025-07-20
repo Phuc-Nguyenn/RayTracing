@@ -142,6 +142,7 @@ public:
         Vector3f x3;
         int n;
         vtxStream >> n;
+        triangles.reserve(n);
         for(int i=0; i<n; ++i) {
             if(vtxStream >> x1.x >> x1.y >> x1.z >> x2.x >> x2.y >> x2.z >> x3.x >> x3.y >> x3.z) {
                 if(format == "xzy") {
@@ -183,6 +184,7 @@ public:
             std::cout << "failed to get <vertices count> <faces count> <edges count> in .off file: " << targetFilePath << std::endl;
             return {};
         }
+        triangles.reserve(facesCount);
         for(int i=0; i<verticesCount; ++i) {
             Vector3f vertex;
             if(!(vtxStream >> vertex.x >> vertex.y >> vertex.z)) {

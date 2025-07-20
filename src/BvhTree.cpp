@@ -6,14 +6,14 @@
 BvhTree::BvhTree() : maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES), activeThreadCount(1)
 {
     ConfigParser& configParser = ConfigParser::GetSingleton();
-    threadCount = configParser.aConfig<unsigned int>("BvhTree", "ThreadCount");
+    maxThreadCount = configParser.aConfig<unsigned int>("BvhTree", "MaxThreadCount");
     threadCreationThreshold = configParser.aConfig<unsigned int>("BvhTree", "ThreadCreationThreshold");
 }
 
 BvhTree::BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf) : triangles(std::move(triangles)), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(maxTrianglesPerLeaf), activeThreadCount(1)
 {
     ConfigParser& configParser = ConfigParser::GetSingleton();
-    threadCount = configParser.aConfig<unsigned int>("BvhTree", "ThreadCount");
+    maxThreadCount = configParser.aConfig<unsigned int>("BvhTree", "MaxThreadCount");
     threadCreationThreshold = configParser.aConfig<unsigned int>("BvhTree", "ThreadCreationThreshold");
 }
 
@@ -128,10 +128,11 @@ int BvhTree::MakeBox(std::vector<Tri>::iterator l, std::vector<Tri>::iterator r,
         std::vector<BoundingBox> rightBoundingBoxes;
         int rightSubtreeRootIndexInRight = -1;
         
+        /** this section decides whether to spawn a thread to deal with the right branch, depending on the number of active threads */
         bool spawnThread = false;
         {
             std::lock_guard<std::mutex> lock(activeThreadCountMutex);
-            if(activeThreadCount < threadCount && std::distance(l, r) > threadCreationThreshold)
+            if(activeThreadCount < maxThreadCount && std::distance(l, r) > threadCreationThreshold)
             {
                 ++activeThreadCount;
                 spawnThread = true;
@@ -189,7 +190,7 @@ std::pair<std::vector<BoundingBox>, std::vector<Tri>> BvhTree::BuildTree() {
     boundingBoxes.clear(); // Clear previous tree
     boundingBoxes.reserve(triangles.size() * 2); // Reserve space for bounding boxes
     
-    std::cout << "BvhTree::BuildTree(): building with " << threadCount << " threads and " << threadCreationThreshold << " thread creation threshold." << std::endl;
+    std::cout << "BvhTree::BuildTree(): building with " << maxThreadCount << " threads and " << threadCreationThreshold << " thread creation threshold." << std::endl;
 
     MakeBox(triangles.begin(), triangles.end(), boundingBoxes);
 
