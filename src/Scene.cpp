@@ -83,44 +83,72 @@ std::vector<float> Scene::FlattenBoundingBoxes(const std::vector<BoundingBox>& b
     }
     return flattened;
 }
+#include <thread>
 
 void Scene::LoadObjects(const std::vector<std::string>& objectFilePaths) {
     int numberOfFiles = objectFilePaths.size();
-    std::unique_ptr<ObjectLoader> objectLoader;
-    for(int i=0; i<numberOfFiles; ++i) {
-        if(objectFilePaths[i].find(".off") != std::string::npos || objectFilePaths[i].find(".OFF") != std::string::npos) {
-            objectLoader = std::make_unique<OFFLoader>();
-        } else {
-            objectLoader = std::make_unique<ObjectLoader>();
-        }
 
-        if(!objectLoader->TargetFile(objectFilePaths[i])) {
-            std::cout << "unable to read from: " << objectFilePaths[i] << std::endl;
-            continue;
-        }
-        std::optional<Material::Material> material = objectLoader->ExtractMaterial();
-        if(!material.has_value()) {
-            std::cout << "unable to read material from: " << objectFilePaths[i] << std::endl;
-            continue;
-        }
-        materials.push_back(std::make_unique<Material::Material>(material.value()));
-        std::optional<std::vector<Tri>> objTris = objectLoader->ExtractTriangles();
-        if(!objTris.has_value()) {
-            std::cout << "unable to read triangles from: " << objectFilePaths[i] << std::endl;
-            continue;
-        }
-        triangles.insert(triangles.end(), objTris.value().begin(), objTris.value().end());
+    std::vector<std::thread> readFileThreads;
+    std::mutex materialsMutex;
+    std::mutex TrianglesMutex;
+    for(int i=0; i<numberOfFiles; ++i) {
+        readFileThreads.push_back(std::thread([&, i](){
+            std::unique_ptr<ObjectLoader> objectLoader;
+            if(objectFilePaths[i].find(".off") != std::string::npos || objectFilePaths[i].find(".OFF") != std::string::npos) {
+                objectLoader = std::make_unique<OFFLoader>();
+            } else {
+                objectLoader = std::make_unique<ObjectLoader>();
+            }
+
+            if(!objectLoader->TargetFile(objectFilePaths[i])) {
+                std::cout << "unable to read from: " << objectFilePaths[i] << std::endl;
+                return;
+            }
+            std::optional<Material::Material> material = objectLoader->ExtractMaterial();
+            if(!material.has_value()) {
+                std::cout << "unable to read material from: " << objectFilePaths[i] << std::endl;
+                return;
+            }
+            {
+                std::lock_guard<std::mutex> lockMaterials(materialsMutex);
+                objectLoader->SetMyMaterialsIndex(materials.size());
+                materials.push_back(std::make_unique<Material::Material>(material.value()));
+            }
+            std::optional<std::vector<Tri>> objTris = objectLoader->ExtractTriangles();
+            if(!objTris.has_value()) {
+                std::cout << "unable to read triangles from: " << objectFilePaths[i] << std::endl;
+                return;
+            }
+            {
+                std::lock_guard<std::mutex> lockTriangles(TrianglesMutex);
+                triangles.insert(triangles.end(), objTris.value().begin(), objTris.value().end());
+            }
+        }));
     }
 
+    for(auto& t : readFileThreads) {
+        if(t.joinable())
+            t.join();
+    }
     // create the Bvh tree
     BvhTree bvhtree(triangles);
     auto [boundingBoxes, reorderedTriangles] = bvhtree.BuildTree();
     triangles = reorderedTriangles;
+    
+    
     // Flatten all triangles into a single vector
-    std::vector<float> trianglesVertexData = FlattenTrianglesVertices(triangles);
-    std::vector<int> trianglesMatIdxData = FlattenTrianglesMatIdx(triangles);
-    std::vector<float> boundingBoxesData = FlattenBoundingBoxes(boundingBoxes);
-    // SendDataAsTextureBuffer(trianglesVertexData, triangles.size(), "u_Triangles", TextureUnitManager::getNewTextureUnit(), GL_RGB32F);
+    std::vector<float> trianglesVertexData;
+    std::vector<int> trianglesMatIdxData;
+    std::vector<float> boundingBoxesData;
+
+    std::thread vertexThread([&]() { trianglesVertexData = FlattenTrianglesVertices(triangles); });
+    std::thread matIdxThread([&]() { trianglesMatIdxData = FlattenTrianglesMatIdx(triangles); });
+    std::thread boxThread([&]() { boundingBoxesData = FlattenBoundingBoxes(boundingBoxes); });
+
+    vertexThread.join();
+    matIdxThread.join();
+    boxThread.join();
+
     SendDataAsSSBO(trianglesVertexData, 0, GL_STATIC_DRAW);
     SendDataAsTextureBuffer(trianglesMatIdxData, triangles.size(), "u_MaterialsIndex", TextureUnitManager::getNewTextureUnit(), GL_R32I);
     SendDataAsTextureBuffer(boundingBoxesData, boundingBoxes.size(), "u_BoundingBoxes", TextureUnitManager::getNewTextureUnit(), GL_RGBA32F);

@@ -39,6 +39,8 @@ private:
 public:
     Camera(Scene& scene);
 
+    bool GetKey(int key) const { return keys[key]; };
+
     Vector3f GetPosition() const;
 
     Vector3f GetFacing() const;

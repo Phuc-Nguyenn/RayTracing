@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <queue>
+#include <thread>
 
 #include "Renderer.h"
 #include "VertexBuffer.h"
@@ -233,7 +234,7 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
         GLCALL(glDrawArrays(GL_TRIANGLES, 0, 6));
 
-        if(keys[GLFW_KEY_B] == true || scene.GetInBoxHitView()) {
+        if(scene.GetCamera().GetKey(GLFW_KEY_B) == true || scene.GetInBoxHitView()) {
             GLCALL(glBlitNamedFramebuffer(
                 fbo, 0,
                 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
@@ -275,7 +276,6 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
                     0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
                     GL_COLOR_BUFFER_BIT, GL_NEAREST));
         }   
-
         glfwSwapBuffers(window.get());
     }
     GLCALL(glDeleteProgram(shaderProgramId));
@@ -339,7 +339,9 @@ std::unique_ptr<GLFWwindow, void(*)(GLFWwindow*)> GLFWWindowFactory(unsigned int
 int main(int argc, char **argv)
 {
     std::string ConfigPath = "RayTracer.ini";
-    ConfigParser parser = ConfigParser(ConfigPath);
+    ConfigParser::SetConfigPath(ConfigPath);
+
+    ConfigParser& parser = ConfigParser::GetSingleton();
 
     std::string vertexShaderPath = parser.aConfig<std::string>("ShaderPaths", "TracerVert");
     std::string fragmentShaderPath = parser.aConfig<std::string>("ShaderPaths", "TracerFrag");
@@ -364,6 +366,7 @@ int main(int argc, char **argv)
         std::cerr << "failed to initialise Glew" << std::endl;
         return EXIT_FAILURE;
     };
+    
     RenderScene(std::move(window), vertexShaderPath, fragmentShaderPath, skyboxPath, objects);
 
     return EXIT_SUCCESS;

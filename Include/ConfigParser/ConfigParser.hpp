@@ -32,7 +32,10 @@ typedef std::map<std::string, std::vector<std::string>> configList;
 class ConfigParser {
 
   public:
-  ConfigParser(std::string path);
+
+    static void SetConfigPath(std::string path);
+
+    static ConfigParser& GetSingleton();
 
     template<typename T>
     T aConfig(std::string section, std::string name, size_t pos = 0);
@@ -41,7 +44,9 @@ class ConfigParser {
 
   private:
 
-    const std::string mPathToConfig;
+    ConfigParser();
+
+    static std::string mPathToConfig;
     configList mConfigurations;
 
 };

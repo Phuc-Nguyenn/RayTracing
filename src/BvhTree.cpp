@@ -1,4 +1,21 @@
 #include "BvhTree.h"
+#include "ConfigParser.hpp"
+
+#include <optional>
+
+BvhTree::BvhTree() : maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES), activeThreadCount(1)
+{
+    ConfigParser& configParser = ConfigParser::GetSingleton();
+    threadCount = configParser.aConfig<unsigned int>("BvhTree", "ThreadCount");
+    threadCreationThreshold = configParser.aConfig<unsigned int>("BvhTree", "ThreadCreationThreshold");
+}
+
+BvhTree::BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf) : triangles(std::move(triangles)), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(maxTrianglesPerLeaf), activeThreadCount(1)
+{
+    ConfigParser& configParser = ConfigParser::GetSingleton();
+    threadCount = configParser.aConfig<unsigned int>("BvhTree", "ThreadCount");
+    threadCreationThreshold = configParser.aConfig<unsigned int>("BvhTree", "ThreadCreationThreshold");
+}
 
 const std::vector<float> BvhTree::splitRatios = {
     0.05f, 0.10f, 0.15f, 0.20f, 0.25f, 0.30f, 0.35f, 0.40f, 0.45f, 0.50f,
@@ -25,13 +42,10 @@ float BvhTree::SurfaceAreaScoreOfSplit(std::vector<Tri>::iterator l, std::vector
     auto [miniR, maxiR] = GetBoundingBoxOfRange(midIdx, r);
     Vector3f extentL = maxiL - miniL;
     Vector3f extentR = maxiR - miniR;
-
     float areaL = SurfaceArea(extentL);
     float areaR = SurfaceArea(extentR);
-
     unsigned int countL = midIdx - l;
     unsigned int countR = r - midIdx;
-
     return areaL * countL + areaR * countR;
 }
 
@@ -53,8 +67,7 @@ std::pair<BvhTree::Dimension, float> BvhTree::SplitBest(std::vector<Tri>::iterat
             splitTrialResults.emplace_back(score, splitValue[i], dim);
         }
     }
-    // Choose the best split (lowest score)
-    if (!splitTrialResults.empty()) {
+    if (!splitTrialResults.empty()) { // Choose the best split (lowest score)
         auto bestSplit = *std::min_element(splitTrialResults.begin(), splitTrialResults.end());
         return {std::get<2>(bestSplit), std::get<1>(bestSplit)};
     }
@@ -76,20 +89,21 @@ std::pair<Vector3f, Vector3f> BvhTree::GetBoundingBoxOfRange(std::vector<Tri>::i
 }
 
 std::vector<Tri>::iterator BvhTree::PartitionRange(std::vector<Tri>::iterator lIter, std::vector<Tri>::iterator rIter, Dimension splitDimension, float splitValue) {
-        auto partitionPoint = std::partition(lIter, rIter, [&](const Tri& triangle) {
-            Vector3f centroid = triangle.Centroid();
-            if (splitDimension == Dimension::x) {
-                return centroid.x < splitValue;
-            } else if (splitDimension == Dimension::y) {
-                return centroid.y < splitValue;
-            } else { // Dimension::z
-                return centroid.z < splitValue;
-            }
-        });
-        return partitionPoint;
-    }
+    auto partitionPoint = std::partition(lIter, rIter, [&](const Tri& triangle) {
+        Vector3f centroid = triangle.Centroid();
+        if (splitDimension == Dimension::x) {
+            return centroid.x < splitValue;
+        } else if (splitDimension == Dimension::y) {
+            return centroid.y < splitValue;
+        } else { // Dimension::z
+            return centroid.z < splitValue;
+        }
+    });
+    return partitionPoint;
+}
 
-int BvhTree::MakeBox(std::vector<Tri>::iterator l, std::vector<Tri>::iterator r, int currDepth) {
+#include <thread>
+int BvhTree::MakeBox(std::vector<Tri>::iterator l, std::vector<Tri>::iterator r, std::vector<BoundingBox>& myBoundingBoxes, int currDepth) {
     // Base case: empty range
     if (l == r) {
         std::cout << "Warning: empty range" << std::endl;
@@ -97,8 +111,8 @@ int BvhTree::MakeBox(std::vector<Tri>::iterator l, std::vector<Tri>::iterator r,
     }
     // create a new bounding box for all triangles in current box [l,r)
     auto[mini, maxi] = GetBoundingBoxOfRange(l, r);
-    BoundingBox newBox = boundingBoxes.emplace_back(maxi, mini); // add to bounding boxes container and get the index
-    int myIndex = boundingBoxes.size() - 1;
+    BoundingBox newBox = myBoundingBoxes.emplace_back(maxi, mini); // add to bounding boxes container and get the index
+    int myIndex = myBoundingBoxes.size() - 1;
     if(r - l > maxTrianglesPerLeaf) {
         maxDepth = std::max(maxDepth, currDepth);
         auto[splitDimension, splitValue] = SplitBest(l, r, newBox);
@@ -109,13 +123,49 @@ int BvhTree::MakeBox(std::vector<Tri>::iterator l, std::vector<Tri>::iterator r,
             std::advance(midIter, std::distance(l, r) * 0.5);
             numberOfDegenerateSplits++;
         }
-        MakeBox(l, midIter, currDepth + 1); // left child index is myindex + 1
-        boundingBoxes[myIndex].rightChildIndex = MakeBox(midIter, r, currDepth + 1);
+
+        std::optional<std::thread> t;
+        std::vector<BoundingBox> rightBoundingBoxes;
+        int rightSubtreeRootIndexInRight = -1;
+        
+        bool spawnThread = false;
+        {
+            std::lock_guard<std::mutex> lock(activeThreadCountMutex);
+            if(activeThreadCount < threadCount && std::distance(l, r) > threadCreationThreshold)
+            {
+                ++activeThreadCount;
+                spawnThread = true;
+            }
+        }
+
+        if(spawnThread) {
+            t.emplace(std::thread([&, midIter, r, currDepth](){
+                rightBoundingBoxes.reserve(std::distance(midIter, r) * 2);
+                MakeBox(midIter, r, rightBoundingBoxes, currDepth + 1);
+                --activeThreadCount;
+            })); 
+            MakeBox(l, midIter, myBoundingBoxes, currDepth + 1);
+        } else {
+            MakeBox(l, midIter, myBoundingBoxes, currDepth + 1);
+            myBoundingBoxes[myIndex].rightChildIndex = MakeBox(midIter, r, myBoundingBoxes, currDepth + 1);
+        }
+
+        if(t && t->joinable())
+        {
+            t->join();
+            int rightRootOffset = static_cast<int>(myBoundingBoxes.size());
+            myBoundingBoxes[myIndex].rightChildIndex = rightRootOffset;
+            
+            for(auto& bb : rightBoundingBoxes) {
+                bb.rightChildIndex += rightRootOffset;
+                myBoundingBoxes.emplace_back(std::move(bb));
+            }
+        }
         numberOfsplitsTotal++;
     } else {
-        boundingBoxes[myIndex].triangleStartIndex = std::distance(triangles.begin(), l);
-        boundingBoxes[myIndex].triangleCount = std::distance(l, r);
-        leafDepthSum += currDepth;
+        myBoundingBoxes[myIndex].triangleStartIndex = std::distance(triangles.begin(), l);
+        myBoundingBoxes[myIndex].triangleCount = std::distance(l, r);
+
         leafNodescount++;
     }
     return myIndex;
@@ -131,21 +181,25 @@ std::pair<std::vector<BoundingBox>, std::vector<Tri>> BvhTree::BuildTree() {
     leafNodescount = 0;
     if (triangles.empty()) {
         std::cout << "Warning: no triangles to build tree from" << std::endl;
-    } else {
-        auto begin = std::chrono::steady_clock::now();
-        
-        boundingBoxes.clear(); // Clear previous tree
-        boundingBoxes.reserve(triangles.size() * 2); // Reserve space for bounding boxes
-        
-        MakeBox(triangles.begin(), triangles.end());
-
-        auto end = std::chrono::steady_clock::now();
-        std::cout << "constructing BVH structure took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "ms" << std::endl;
-        std::cout << "number of bounding boxes: " << boundingBoxes.size() + 1 << std::endl;
-        std::cout << "number of total splits: " << numberOfsplitsTotal << std::endl;
-        std::cout << "number of degenerate splits: " << numberOfDegenerateSplits << ", as a percentage of total: " << float(numberOfDegenerateSplits)/numberOfsplitsTotal << std::endl;
-        std::cout << "number of leaf nodes: " << leafNodescount << std::endl;
-        std::cout << "maximum depth of leaf nodes " << maxDepth << ", average depth: " << float(leafDepthSum)/leafNodescount << std::endl;
+        return {boundingBoxes, triangles};
     }
+
+    auto begin = std::chrono::steady_clock::now();
+    
+    boundingBoxes.clear(); // Clear previous tree
+    boundingBoxes.reserve(triangles.size() * 2); // Reserve space for bounding boxes
+    
+    std::cout << "BvhTree::BuildTree(): building with " << threadCount << " threads and " << threadCreationThreshold << " thread creation threshold." << std::endl;
+
+    MakeBox(triangles.begin(), triangles.end(), boundingBoxes);
+
+    auto end = std::chrono::steady_clock::now();
+    std::cout << "constructing BVH structure took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "ms" << std::endl;
+    std::cout << "number of bounding boxes: " << boundingBoxes.size() + 1 << std::endl;
+    std::cout << "number of total splits: " << numberOfsplitsTotal << std::endl;
+    std::cout << "number of degenerate splits: " << numberOfDegenerateSplits << ", as a percentage of total: " << float(numberOfDegenerateSplits)/numberOfsplitsTotal << std::endl;
+    std::cout << "number of leaf nodes: " << leafNodescount << std::endl;
+    std::cout << "maximum depth of leaf nodes " << maxDepth << ", average depth: " << float(leafDepthSum)/leafNodescount << std::endl;
+
     return {boundingBoxes, triangles};
 };

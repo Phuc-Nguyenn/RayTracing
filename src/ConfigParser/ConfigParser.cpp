@@ -18,17 +18,31 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-#include "configparser.hpp"
+#include "ConfigParser.hpp"
 #include <fstream>
 #include <sstream>
 #include <vector>
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+#include <cassert>
 
 using namespace std;
 
-ConfigParser::ConfigParser(string path) : mPathToConfig(path) {
+std::string ConfigParser::mPathToConfig = "";
+
+void ConfigParser::SetConfigPath(std::string path)
+{
+  mPathToConfig = path;
+}
+
+ConfigParser& ConfigParser::GetSingleton() {
+  assert(!mPathToConfig.empty());
+  static ConfigParser singleton;
+  return singleton;
+}
+
+ConfigParser::ConfigParser() {
 
   ifstream configFile;
   configFile.open( mPathToConfig );
@@ -75,7 +89,7 @@ ConfigParser::ConfigParser(string path) : mPathToConfig(path) {
     }
 
     else {
-      string errorMessage = path + ":" + to_string(lineNbr) + ": parsing error \n" + line;
+      string errorMessage = mPathToConfig + ":" + to_string(lineNbr) + ": parsing error \n" + line;
       throw std::runtime_error(errorMessage);
     }
 
@@ -84,6 +98,8 @@ ConfigParser::ConfigParser(string path) : mPathToConfig(path) {
     lineNbr++;
   }
 } 
+
+
 
 template <>
 bool ConfigParser::aConfig<bool>(std::string section, std::string configName, size_t pos) {

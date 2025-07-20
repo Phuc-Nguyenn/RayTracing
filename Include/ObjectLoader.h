@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <optional>
+#include <cassert>
 
 #include "Tri.h"
 #include "Materials.h"
@@ -125,11 +126,17 @@ public:
             std::cout << "unable to read material format" << std::endl;
             return {};
         }
-        myMaterialIndex = materialsLoaded++;
         return {*material};
     };
 
+    void SetMyMaterialsIndex(int index)
+    {
+        myMaterialIndex = index;
+    }
+
     virtual std::optional<std::vector<Tri>> ExtractTriangles() {
+        assert(myMaterialIndex != -1); // should be set to the next index in the materials vector in scene
+
         Vector3f x1;
         Vector3f x2;
         Vector3f x3;
@@ -161,6 +168,8 @@ private:
     std::vector<Vector3f> vertices;
 public:
     virtual std::optional<std::vector<Tri>> ExtractTriangles() override {
+        assert(myMaterialIndex != -1); // should be set to the next index in the materials vector in scene
+
         Vector3f x1;
         Vector3f x2;
         Vector3f x3;

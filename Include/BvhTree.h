@@ -7,6 +7,8 @@
 #include <limits.h>
 #include <cfloat>
 #include <chrono>
+#include <atomic>
+#include <mutex>
 
 class BoundingBox {
 public:
@@ -35,12 +37,15 @@ public:
 class BvhTree
 {
 private:
+    std::mutex boundingBoxesMutex;
     std::vector<BoundingBox> boundingBoxes;
     std::vector<Tri> triangles;
     int maxDepth;
     int maxTrianglesPerLeaf; // configurable threshold for when to stop subdividing
     unsigned long int numberOfsplitsTotal;
     unsigned long int numberOfDegenerateSplits;
+    unsigned int threadCount;
+    unsigned int threadCreationThreshold;
 
     enum Dimension {
         x = 0,
@@ -67,11 +72,14 @@ private:
     unsigned int leafDepthSum;
     unsigned int leafNodescount;
     
-    int MakeBox(std::vector<Tri>::iterator l, std::vector<Tri>::iterator r, int currDepth = 1);
+    int MakeBox(std::vector<Tri>::iterator l, std::vector<Tri>::iterator r, std::vector<BoundingBox>& myBoundingBoxes, int currDepth = 1);
+
+    std::mutex activeThreadCountMutex;
+    std::atomic<int> activeThreadCount;
 
 public:
-    BvhTree() : maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(DEFAULT_LEAF_TRIANGLES) {}
-    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES) : triangles(std::move(triangles)), maxDepth(0), numberOfsplitsTotal(0), numberOfDegenerateSplits(0), maxTrianglesPerLeaf(maxTrianglesPerLeaf) {}
+    BvhTree();
+    BvhTree(std::vector<Tri> triangles, int maxTrianglesPerLeaf=DEFAULT_LEAF_TRIANGLES);
 
     void SetTriangles(std::vector<Tri> newTriangles);
 
@@ -80,4 +88,5 @@ public:
     }
 
     std::pair<std::vector<BoundingBox>, std::vector<Tri>> BuildTree();
+
 };
