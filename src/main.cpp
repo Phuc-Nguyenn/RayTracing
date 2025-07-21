@@ -114,14 +114,17 @@ static void LoadNoiseTexture(unsigned int shaderProgramId, std::string noiseText
     stbi_image_free(data);
 }
 
+#include <chrono>
+
 static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)> window,
                         const std::string &vertexShaderPath,
                         const std::string &fragmentShaderPath,
                         const std::string &skyBoxPath,
                         const std::vector<std::string>& objectPaths)
 {
+    auto start_time = std::chrono::high_resolution_clock::now();
+
     TextureUnitManager::ResetTextureUnits();
-    
     ShaderProgramSource source = ParseShader(vertexShaderPath, fragmentShaderPath);
     unsigned int shaderProgramId = CreateShaderProgram(source.VertexSource, source.FragmentSource);
     GLCALL(glUseProgram(shaderProgramId));
@@ -222,6 +225,8 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
 
     Recorder recorder(scene.GetCamera(), tmpTexture, SCREEN_WIDTH, SCREEN_HEIGHT);
     FpsPrinter fpsPrinter;
+    bool firstFrame = true;
+
     while (!glfwWindowShouldClose(window.get()))
     {
         GLCALL(glUseProgram(shaderProgramId));
@@ -277,6 +282,13 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
                     GL_COLOR_BUFFER_BIT, GL_NEAREST));
         }   
         glfwSwapBuffers(window.get());
+
+        if(firstFrame) {
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+            std::cout << "RenderScene(): total set up time: " << duration.count() << " ms." << std::endl;
+            firstFrame = false;
+        }
     }
     GLCALL(glDeleteProgram(shaderProgramId));
     glDisableVertexAttribArray(0);
