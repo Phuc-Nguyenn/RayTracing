@@ -20,13 +20,13 @@ sudo apt-get install libglfw3-dev
 ## Build and Run
 To build and run the project:
 ```cmd
-bash build_and_run.sh
+bash build.sh
 ```
 
 ## Run only
 To run the project after it has been built:
 ```cmd
-bash run.sh
+./build/ray_tracer
 ```
 
 ## Controls
