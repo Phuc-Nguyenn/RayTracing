@@ -17,13 +17,13 @@ sudo apt install libglew-dev
 sudo apt-get install libglfw3-dev
 ```
 
-## Build and Run
-To build and run the project:
+## Build
+To build the project:
 ```cmd
 bash build.sh
 ```
 
-## Run only
+## Run
 To run the project after it has been built:
 ```cmd
 ./build/ray_tracer
