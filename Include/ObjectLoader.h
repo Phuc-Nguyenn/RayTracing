@@ -126,6 +126,7 @@ public:
             return {};
         }
         myMaterialIndex = materialsLoaded++;
+
         return {*material};
     };
 

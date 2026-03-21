@@ -19,14 +19,14 @@
 #include "TextureUnitManager.h"
 #include "KeyEventNotifier.h"
 #include "ConfigParser.hpp"
-#include "FpsPrinter.h"
+#include "InfoPrinter.h"
 #include "Recorder.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#define SCREEN_WIDTH 1600
-#define SCREEN_HEIGHT 900
+#define SCREEN_WIDTH 1280
+#define SCREEN_HEIGHT 720
 
 #define TIME_PER_FRAME_MS 5000
 
@@ -176,7 +176,7 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     /** code for Skybox  */
     LoadSkybox(shaderProgramId, skyBoxPath);
     /** rng noise textures */
-    LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbNoiseSquare.png", "u_RgbNoise");
+    LoadNoiseTexture(shaderProgramId, "./Textures/Noise/rgbNoiseSquareLarge.png", "u_RgbNoise");
 
     scene.LoadObjects(objectPaths);
 
@@ -220,15 +220,14 @@ static void RenderScene(std::unique_ptr<GLFWwindow, decltype(&glfwDestroyWindow)
     GLCALL(glClear(GL_COLOR_BUFFER_BIT));
 
     Recorder recorder(scene.GetCamera(), tmpTexture, SCREEN_WIDTH, SCREEN_HEIGHT);
-    FpsPrinter fpsPrinter;
+    InfoPrinter infoPrinter(scene.GetCamera());
     while (!glfwWindowShouldClose(window.get()))
     {
         GLCALL(glUseProgram(shaderProgramId));
         glfwPollEvents();
         recorder.Tick();
-        fpsPrinter.Tick();
+        infoPrinter.Tick();
         scene.Tick();
-
         // Render raytrace to framebuffer
         GLCALL(glBindFramebuffer(GL_FRAMEBUFFER, fbo));
         GLCALL(glDrawArrays(GL_TRIANGLES, 0, 6));
@@ -335,7 +334,6 @@ std::unique_ptr<GLFWwindow, void(*)(GLFWwindow*)> GLFWWindowFactory(unsigned int
     return std::unique_ptr<GLFWwindow, void(*)(GLFWwindow*)>(rawWindow, glfwDestroyWindow);
 }
 
-
 int main(int argc, char **argv)
 {
     std::string ConfigPath = "RayTracer.ini";
@@ -349,7 +347,6 @@ int main(int argc, char **argv)
     for(auto& s : objects) {
         s = objectDir + "/" + s;
     }
-
     if(!InitialiseGLFW(error_callback)) {
         std::cerr << "failed to initialise GLFW" << std::endl;
         return EXIT_FAILURE;
