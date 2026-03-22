@@ -6,3 +6,4 @@ Objects/DragonGlass.off filter=lfs diff=lfs merge=lfs -text
 Objects/LightBox.txt filter=lfs diff=lfs merge=lfs -text
 Objects/LightBox2.txt filter=lfs diff=lfs merge=lfs -text
 Objects/LightBox3.txt filter=lfs diff=lfs merge=lfs -text
+Objects/guy.off filter=lfs diff=lfs merge=lfs -text
