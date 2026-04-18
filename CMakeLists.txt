@@ -7,7 +7,8 @@ find_package(GLEW REQUIRED)
 find_package(glfw3 REQUIRED)
 
 set(CMAKE_CXX_COMPILER "/usr/bin/g++") 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O5")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++23 -O5")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Add the executable
 add_executable(ray_tracer 
